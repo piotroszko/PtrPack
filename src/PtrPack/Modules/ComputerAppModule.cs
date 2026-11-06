@@ -20,6 +20,7 @@ internal sealed class ComputerAppModule : PtrModule
 
     internal override string Id => "ComputerApp";
     internal override string DisplayName => "Computer App";
+    internal override bool EnabledByDefault => false;
 
     internal override void OnGameplayEnter()
     {
