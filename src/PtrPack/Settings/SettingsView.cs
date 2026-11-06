@@ -60,9 +60,11 @@ internal static class SettingsView
         var durationDropdownTemplate = dropdownSource != null
             ? CloneTemplate(dropdownSource.gameObject, staging.transform)
             : null;
-        var durationButtonSource = buttonTemplate ?? UiFactory.FindSceneComponent<ButtonExtended>();
+        var durationButtonSource = FindButton(content)
+            ?? buttonTemplate?.gameObject
+            ?? UiFactory.FindSceneComponent<ButtonExtended>()?.gameObject;
         var durationButtonTemplate = durationButtonSource != null
-            ? CloneTemplate(durationButtonSource.gameObject, staging.transform)
+            ? CloneTemplate(durationButtonSource, staging.transform)
             : null;
 
         for (int i = content.childCount - 1; i >= 0; i--)
@@ -153,7 +155,7 @@ internal static class SettingsView
             return;
         }
 
-        toggle.onValueChanged.RemoveAllListeners();
+        ClearEvent(toggle.onValueChanged);
         toggle.SetIsOnWithoutNotify(setting.Entry.Value);
         toggle.onValueChanged.AddListener(
             (UnityAction<bool>)(Action<bool>)(value => setting.Apply(value)));
@@ -188,7 +190,7 @@ internal static class SettingsView
         if (valueLabel != null)
             valueLabel.text = setting.FormatValue(setting.Entry.Value);
 
-        slider.onValueChanged.RemoveAllListeners();
+        ClearEvent(slider.onValueChanged);
         slider.onValueChanged.AddListener(
             (UnityAction<float>)(Action<float>)(raw =>
             {
@@ -254,7 +256,7 @@ internal static class SettingsView
         label.fontSize = 18f;
         label.alignment = TextAlignmentOptions.Left;
         label.gameObject.SetActive(true);
-        SetLayoutWidth(label.gameObject, 120f, 1f);
+        SetLayoutSize(label.gameObject, 120f, 1f, 30f);
 
         var input = UnityEngine.Object.Instantiate(inputTemplate, row.transform)
             .GetComponent<TMP_InputField>();
@@ -267,11 +269,18 @@ internal static class SettingsView
 
         input.name = "Amount";
         input.gameObject.SetActive(true);
+        input.interactable = true;
         input.contentType = TMP_InputField.ContentType.IntegerNumber;
         input.characterLimit = 6;
-        input.onValueChanged.RemoveAllListeners();
+        ClearEvent(input.onValueChanged);
+        ClearEvent(input.onEndEdit);
+        ClearEvent(input.onSubmit);
+        ClearEvent(input.onSelect);
+        ClearEvent(input.onDeselect);
+        ClearEvent(input.onTextSelection);
+        ClearEvent(input.onEndTextSelection);
         input.SetTextWithoutNotify(setting.DefaultValue.ToString());
-        SetLayoutWidth(input.gameObject, 80f, 0f);
+        SetLayoutSize(input.gameObject, 80f, 0f, 32f);
 
         var dropdown = UnityEngine.Object.Instantiate(dropdownTemplate, row.transform)
             .GetComponent<TMP_Dropdown>();
@@ -284,6 +293,7 @@ internal static class SettingsView
 
         dropdown.name = "Unit";
         dropdown.gameObject.SetActive(true);
+        dropdown.interactable = true;
         dropdown.ClearOptions();
 
         var options = new Il2CppSystem.Collections.Generic.List<string>();
@@ -293,27 +303,14 @@ internal static class SettingsView
         dropdown.AddOptions(options);
         dropdown.SetValueWithoutNotify(setting.DefaultUnitIndex);
         dropdown.RefreshShownValue();
-        dropdown.onValueChanged.RemoveAllListeners();
-        SetLayoutWidth(dropdown.gameObject, 140f, 0f);
+        ClearEvent(dropdown.onValueChanged);
+        SetLayoutSize(dropdown.gameObject, 140f, 0f, 32f);
 
-        var button = UnityEngine.Object.Instantiate(buttonTemplate, row.transform)
-            .GetComponent<ButtonExtended>();
-        if (button == null)
-        {
-            UnityEngine.Object.Destroy(row);
-            warning($"Button template for action setting '{setting.Key}' is invalid.");
-            return;
-        }
-
+        var button = UnityEngine.Object.Instantiate(buttonTemplate, row.transform);
         button.name = "Apply";
-        button.gameObject.SetActive(true);
-        button.onClick.RemoveAllListeners();
+        button.SetActive(true);
 
-        var buttonLabel = FindTextAt(button.transform, 0);
-        if (buttonLabel != null)
-            buttonLabel.text = setting.ButtonText;
-
-        button.onClick.AddListener((UnityAction)(Action)(() =>
+        Action apply = () =>
         {
             if (!int.TryParse(input.text, out int amount))
                 amount = setting.DefaultValue;
@@ -322,14 +319,63 @@ internal static class SettingsView
             input.SetTextWithoutNotify(amount.ToString());
 
             int unit = Math.Clamp(dropdown.value, 0, setting.UnitSeconds.Length - 1);
-            setting.Apply(amount * setting.UnitSeconds[unit]);
-        }));
-        SetLayoutWidth(button.gameObject, 90f, 0f);
+            long totalSeconds = (long)amount * setting.UnitSeconds[unit];
+            setting.Apply(totalSeconds > int.MaxValue ? int.MaxValue : (int)totalSeconds);
+        };
+
+        if (!WireButton(button, apply))
+        {
+            UnityEngine.Object.Destroy(row);
+            warning($"Button template for action setting '{setting.Key}' is invalid.");
+            return;
+        }
+
+        var buttonLabel = FindTextAt(button.transform, 0);
+        if (buttonLabel != null)
+            buttonLabel.text = setting.ButtonText;
+
+        SetLayoutSize(button, 90f, 0f, 32f);
 
         DisableLocalisation(row);
     }
 
-    private static void SetLayoutWidth(GameObject target, float preferredWidth, float flexibleWidth)
+    private static GameObject? FindButton(Transform root)
+    {
+        var extended = root.GetComponentInChildren<ButtonExtended>(true);
+        if (extended != null)
+            return extended.gameObject;
+
+        var button = root.GetComponentInChildren<Button>(true);
+        return button != null ? button.gameObject : null;
+    }
+
+    private static bool WireButton(GameObject target, Action action)
+    {
+        var extended = target.GetComponentInChildren<ButtonExtended>(true);
+        if (extended != null)
+        {
+            extended.interactable = true;
+            ClearEvent(extended.onClick);
+            ClearEvent(extended.onSecondClick);
+            extended.onClick.AddListener((UnityAction)action);
+            return true;
+        }
+
+        var button = target.GetComponentInChildren<Button>(true);
+        if (button == null)
+            return false;
+
+        button.interactable = true;
+        ClearEvent(button.onClick);
+        button.onClick.AddListener((UnityAction)action);
+        return true;
+    }
+
+    private static void SetLayoutSize(
+        GameObject target,
+        float preferredWidth,
+        float flexibleWidth,
+        float height)
     {
         var element = target.GetComponent<LayoutElement>();
         if (element == null)
@@ -338,6 +384,18 @@ internal static class SettingsView
         element.minWidth = preferredWidth;
         element.preferredWidth = preferredWidth;
         element.flexibleWidth = flexibleWidth;
+        element.minHeight = height;
+        element.preferredHeight = height;
+        element.flexibleHeight = 0f;
+    }
+
+    private static void ClearEvent(UnityEventBase unityEvent)
+    {
+        if (unityEvent == null) return;
+        for (int i = unityEvent.GetPersistentEventCount() - 1; i >= 0; i--)
+            unityEvent.SetPersistentListenerState(i, UnityEventCallState.Off);
+
+        unityEvent.RemoveAllListeners();
     }
 
     private static void EnsureLayout(RectTransform content)

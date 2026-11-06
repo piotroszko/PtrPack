@@ -21,6 +21,11 @@ internal sealed class DurationActionSetting : SettingDefinition
         if (unitSeconds == null) throw new ArgumentNullException(nameof(unitSeconds));
         if (unitLabels.Length == 0 || unitLabels.Length != unitSeconds.Length)
             throw new ArgumentException("Duration units must be non-empty and pair labels with seconds.");
+        for (int i = 0; i < unitSeconds.Length; i++)
+        {
+            if (unitSeconds[i] <= 0)
+                throw new ArgumentOutOfRangeException(nameof(unitSeconds), "Duration units must be positive.");
+        }
         if (min < 1 || max < min)
             throw new ArgumentOutOfRangeException(nameof(min), "Duration range is invalid.");
         if (defaultValue < min || defaultValue > max)
