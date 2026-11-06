@@ -29,6 +29,21 @@ internal sealed class EolControlModule : PtrModule
             1,
             "{0}x",
             EolControl.SetMultiplier);
+        section.AddDurationAction(
+            "AddTime",
+            "Add lifetime to all devices",
+            "Add",
+            1,
+            9999,
+            1,
+            new[] { "Seconds", "Minutes", "Hours" },
+            new[] { 1, 60, 3600 },
+            2,
+            seconds =>
+            {
+                int count = EolControl.AddTimeToAll(seconds);
+                Context.Log.Msg($"Added {seconds}s to {count} device(s).");
+            });
     }
 
     internal override void OnInitialize()

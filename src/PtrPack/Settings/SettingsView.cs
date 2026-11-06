@@ -1,6 +1,7 @@
 using System;
 using Il2Cpp;
 using Il2CppTMPro;
+using PtrPack.Ui;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
@@ -13,7 +14,11 @@ internal static class SettingsView
     private const string ToggleTemplateName = "AutoSaveOnOff";
     private const string SliderTemplateName = "Evaluation FPS budget";
 
-    internal static bool Build(GameObject panel, ModSettings settings, Action<string> warning)
+    internal static bool Build(
+        GameObject panel,
+        ModSettings settings,
+        Action<string> warning,
+        ButtonExtended? buttonTemplate = null)
     {
         var scroll = panel.GetComponentInChildren<ScrollRect>(true);
         if (scroll == null || scroll.content == null)
@@ -32,10 +37,13 @@ internal static class SettingsView
 
         var toggleSource = FindDirect(content, ToggleTemplateName);
         var sliderSource = FindDirect(content, SliderTemplateName);
+        var inputSource = UiFactory.FindSceneComponent<TMP_InputField>();
 
         var staging = new GameObject("PtrPackSettingsTemplates");
         staging.transform.SetParent(panel.transform, false);
         staging.SetActive(false);
+        var dropdownSource = content.GetComponentInChildren<TMP_Dropdown>(true)
+            ?? UiFactory.FindSceneComponent<TMP_Dropdown>();
 
         var sectionTemplate = CloneTemplate(sectionSource.gameObject, staging.transform);
         var toggleTemplate = toggleSource != null
@@ -43,6 +51,18 @@ internal static class SettingsView
             : null;
         var sliderTemplate = sliderSource != null
             ? CloneTemplate(sliderSource.gameObject, staging.transform)
+            : null;
+        var durationRowTemplate = toggleTemplate;
+        var durationLabelTemplate = sectionTemplate.GetComponentInChildren<TextMeshProUGUI>(true);
+        var durationInputTemplate = inputSource != null
+            ? CloneTemplate(inputSource.gameObject, staging.transform)
+            : null;
+        var durationDropdownTemplate = dropdownSource != null
+            ? CloneTemplate(dropdownSource.gameObject, staging.transform)
+            : null;
+        var durationButtonSource = buttonTemplate ?? UiFactory.FindSceneComponent<ButtonExtended>();
+        var durationButtonTemplate = durationButtonSource != null
+            ? CloneTemplate(durationButtonSource.gameObject, staging.transform)
             : null;
 
         for (int i = content.childCount - 1; i >= 0; i--)
@@ -75,6 +95,17 @@ internal static class SettingsView
                         break;
                     case IntSliderSetting slider when sliderTemplate != null:
                         AddSlider(content, sliderTemplate, slider);
+                        break;
+                    case DurationActionSetting action:
+                        AddDurationAction(
+                            content,
+                            durationRowTemplate,
+                            durationLabelTemplate,
+                            durationInputTemplate,
+                            durationDropdownTemplate,
+                            durationButtonTemplate,
+                            action,
+                            warning);
                         break;
                     default:
                         warning($"No UI template for setting '{setting.Key}'.");
@@ -166,6 +197,147 @@ internal static class SettingsView
                 if (valueLabel != null)
                     valueLabel.text = setting.FormatValue(value);
             }));
+    }
+
+    private static void AddDurationAction(
+        Transform content,
+        GameObject? rowTemplate,
+        TextMeshProUGUI? labelTemplate,
+        GameObject? inputTemplate,
+        GameObject? dropdownTemplate,
+        GameObject? buttonTemplate,
+        DurationActionSetting setting,
+        Action<string> warning)
+    {
+        if (rowTemplate == null
+            || labelTemplate == null
+            || inputTemplate == null
+            || dropdownTemplate == null
+            || buttonTemplate == null)
+        {
+            warning($"No UI template for action setting '{setting.Key}'.");
+            return;
+        }
+
+        var row = UnityEngine.Object.Instantiate(rowTemplate, content);
+        row.name = "Setting_" + setting.Key;
+        row.SetActive(true);
+        SetHeight(row, 50f);
+
+        for (int i = row.transform.childCount - 1; i >= 0; i--)
+            UnityEngine.Object.Destroy(row.transform.GetChild(i).gameObject);
+
+        var layout = row.GetComponent<HorizontalLayoutGroup>();
+        if (layout == null)
+        {
+            var existing = row.GetComponent<LayoutGroup>();
+            if (existing != null)
+                existing.enabled = false;
+
+            layout = row.AddComponent<HorizontalLayoutGroup>();
+        }
+
+        var padding = new RectOffset();
+        padding.left = 16;
+        padding.right = 16;
+        layout.padding = padding;
+        layout.spacing = 8f;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = false;
+        layout.childForceExpandHeight = false;
+
+        var label = UnityEngine.Object.Instantiate(labelTemplate, row.transform);
+        label.name = "Label";
+        label.text = setting.Label;
+        label.fontSize = 18f;
+        label.alignment = TextAlignmentOptions.Left;
+        label.gameObject.SetActive(true);
+        SetLayoutWidth(label.gameObject, 120f, 1f);
+
+        var input = UnityEngine.Object.Instantiate(inputTemplate, row.transform)
+            .GetComponent<TMP_InputField>();
+        if (input == null)
+        {
+            UnityEngine.Object.Destroy(row);
+            warning($"Input template for action setting '{setting.Key}' is invalid.");
+            return;
+        }
+
+        input.name = "Amount";
+        input.gameObject.SetActive(true);
+        input.contentType = TMP_InputField.ContentType.IntegerNumber;
+        input.characterLimit = 6;
+        input.onValueChanged.RemoveAllListeners();
+        input.SetTextWithoutNotify(setting.DefaultValue.ToString());
+        SetLayoutWidth(input.gameObject, 80f, 0f);
+
+        var dropdown = UnityEngine.Object.Instantiate(dropdownTemplate, row.transform)
+            .GetComponent<TMP_Dropdown>();
+        if (dropdown == null)
+        {
+            UnityEngine.Object.Destroy(row);
+            warning($"Dropdown template for action setting '{setting.Key}' is invalid.");
+            return;
+        }
+
+        dropdown.name = "Unit";
+        dropdown.gameObject.SetActive(true);
+        dropdown.ClearOptions();
+
+        var options = new Il2CppSystem.Collections.Generic.List<string>();
+        for (int i = 0; i < setting.UnitLabels.Length; i++)
+            options.Add(setting.UnitLabels[i]);
+
+        dropdown.AddOptions(options);
+        dropdown.SetValueWithoutNotify(setting.DefaultUnitIndex);
+        dropdown.RefreshShownValue();
+        dropdown.onValueChanged.RemoveAllListeners();
+        SetLayoutWidth(dropdown.gameObject, 140f, 0f);
+
+        var button = UnityEngine.Object.Instantiate(buttonTemplate, row.transform)
+            .GetComponent<ButtonExtended>();
+        if (button == null)
+        {
+            UnityEngine.Object.Destroy(row);
+            warning($"Button template for action setting '{setting.Key}' is invalid.");
+            return;
+        }
+
+        button.name = "Apply";
+        button.gameObject.SetActive(true);
+        button.onClick.RemoveAllListeners();
+
+        var buttonLabel = FindTextAt(button.transform, 0);
+        if (buttonLabel != null)
+            buttonLabel.text = setting.ButtonText;
+
+        button.onClick.AddListener((UnityAction)(Action)(() =>
+        {
+            if (!int.TryParse(input.text, out int amount))
+                amount = setting.DefaultValue;
+
+            amount = Math.Clamp(amount, setting.Min, setting.Max);
+            input.SetTextWithoutNotify(amount.ToString());
+
+            int unit = Math.Clamp(dropdown.value, 0, setting.UnitSeconds.Length - 1);
+            setting.Apply(amount * setting.UnitSeconds[unit]);
+        }));
+        SetLayoutWidth(button.gameObject, 90f, 0f);
+
+        DisableLocalisation(row);
+    }
+
+    private static void SetLayoutWidth(GameObject target, float preferredWidth, float flexibleWidth)
+    {
+        var element = target.GetComponent<LayoutElement>();
+        if (element == null)
+            element = target.AddComponent<LayoutElement>();
+
+        element.minWidth = preferredWidth;
+        element.preferredWidth = preferredWidth;
+        element.flexibleWidth = flexibleWidth;
     }
 
     private static void EnsureLayout(RectTransform content)

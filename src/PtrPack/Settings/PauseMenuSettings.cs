@@ -5,6 +5,7 @@ using MelonLoader;
 using PtrPack.Diagnostics;
 using PtrPack.Ui;
 using UnityEngine;
+using UnityEngine.UI;
 
 using Object = UnityEngine.Object;
 
@@ -152,7 +153,10 @@ internal sealed class PauseMenuSettings
         panel.name = PanelName;
         UiFactory.Stretch(panel.GetComponent<RectTransform>(), Vector2.zero, Vector2.zero);
 
-        if (!SettingsView.Build(panel, _settings, _log.Warning))
+        var buttonTemplate = pause.resumeButton != null
+            ? pause.resumeButton.GetComponentInChildren<ButtonExtended>(true)
+            : null;
+        if (!SettingsView.Build(panel, _settings, _log.Warning, buttonTemplate))
         {
             Object.Destroy(panel);
             Object.Destroy(tab.gameObject);

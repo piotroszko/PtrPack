@@ -82,6 +82,34 @@ internal sealed class SettingsSection
         return setting;
     }
 
+    internal DurationActionSetting AddDurationAction(
+        string key,
+        string label,
+        string buttonText,
+        int min,
+        int max,
+        int defaultValue,
+        string[] unitLabels,
+        int[] unitSeconds,
+        int defaultUnitIndex,
+        Action<int> apply)
+    {
+        EnsureUnique(key);
+        var setting = new DurationActionSetting(
+            key,
+            label,
+            buttonText,
+            min,
+            max,
+            defaultValue,
+            unitLabels,
+            unitSeconds,
+            defaultUnitIndex,
+            apply);
+        _settings.Add(setting);
+        return setting;
+    }
+
     private void EnsureUnique(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
