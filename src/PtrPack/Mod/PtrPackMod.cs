@@ -43,7 +43,6 @@ public sealed class PtrPackMod : MelonMod
 
     private static PtrModule[] CreateModules() => new PtrModule[]
     {
-        new PauseMenuTabModule(),
         new EolControlModule(),
         new ComputerAppModule(),
     };

@@ -1,12 +1,11 @@
 using System;
 using Il2Cpp;
 using Il2CppTMPro;
-using PtrPack.Settings;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
-namespace PtrPack.Ui;
+namespace PtrPack.Settings;
 
 internal static class SettingsView
 {

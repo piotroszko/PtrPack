@@ -1,37 +1,47 @@
 using Il2Cpp;
-using PtrPack.Mod;
-using PtrPack.Ui;
 using Il2CppTMPro;
+using PtrPack.Diagnostics;
+using PtrPack.Ui;
 using UnityEngine;
 
-namespace PtrPack.Modules;
+namespace PtrPack.Settings;
 
-internal sealed class PauseMenuTabModule : PtrModule
+internal sealed class PauseMenuSettings
 {
     private const string TabName = "PtrPackTab";
     private const string PanelName = "PtrPackPanel";
 
+    private readonly ModSettings _settings;
+    private readonly ModuleLog _log;
+
     private PauseMenu? _pause;
     private PauseMenu_TabButton? _tab;
     private GameObject? _panel;
+    private bool _active;
     private bool _needsDefault;
     private bool _warned;
 
-    internal override string Id => "PauseMenuTab";
-    internal override string DisplayName => "Pause Menu Tab";
-
-    internal override void OnGameplayEnter()
+    internal PauseMenuSettings(ModSettings settings, ModuleLog log)
     {
-        _pause = null;
-        _tab = null;
-        _panel = null;
-        _needsDefault = false;
-        _warned = false;
+        _settings = settings;
+        _log = log;
     }
 
-    internal override void OnUpdate()
+    internal void OnGameplayEnter()
     {
-        if (!Context.InGameplay) return;
+        _active = true;
+        Reset();
+    }
+
+    internal void OnGameplayExit()
+    {
+        _active = false;
+        Reset();
+    }
+
+    internal void OnUpdate()
+    {
+        if (!_active) return;
 
         if (_needsDefault && _pause != null && _pause.mainPauseMenuTabGroup != null)
         {
@@ -53,7 +63,7 @@ internal sealed class PauseMenuTabModule : PtrModule
             if (!_warned)
             {
                 _warned = true;
-                Context.Log.Warning("PauseMenu was not found; tab not installed.");
+                _log.Warning("PauseMenu was not found; settings tab not installed.");
             }
 
             return;
@@ -65,7 +75,7 @@ internal sealed class PauseMenuTabModule : PtrModule
             if (!_warned)
             {
                 _warned = true;
-                Context.Log.Warning("Pause menu tab references are not ready.");
+                _log.Warning("Pause menu tab references are not ready.");
             }
 
             return;
@@ -84,7 +94,7 @@ internal sealed class PauseMenuTabModule : PtrModule
         var templateText = templateTab?.GetComponentInChildren<TextMeshProUGUI>(true);
         if (group == null || templateTab == null || templateText == null)
         {
-            Context.Log.Warning("Pause menu tab templates are unavailable.");
+            _log.Warning("Pause menu tab templates are unavailable.");
             return;
         }
 
@@ -107,7 +117,7 @@ internal sealed class PauseMenuTabModule : PtrModule
         if (panels == null || panels.Count == 0)
         {
             Object.Destroy(tab.gameObject);
-            Context.Log.Warning("Pause menu has no panel list; tab not installed.");
+            _log.Warning("Pause menu has no panel list; settings tab not installed.");
             return;
         }
 
@@ -116,7 +126,7 @@ internal sealed class PauseMenuTabModule : PtrModule
         if (settingsTemplate == null)
         {
             Object.Destroy(tab.gameObject);
-            Context.Log.Warning("Pause menu settings panel template 'Gameplay' was not found.");
+            _log.Warning("Pause menu settings panel template 'Gameplay' was not found.");
             return;
         }
 
@@ -124,11 +134,11 @@ internal sealed class PauseMenuTabModule : PtrModule
         panel.name = PanelName;
         UiFactory.Stretch(panel.GetComponent<RectTransform>(), Vector2.zero, Vector2.zero);
 
-        if (!SettingsView.Build(panel, Context.Settings, Context.Log.Warning))
+        if (!SettingsView.Build(panel, _settings, _log.Warning))
         {
             Object.Destroy(panel);
             Object.Destroy(tab.gameObject);
-            Context.Log.Warning("Pause menu settings view could not be built.");
+            _log.Warning("Pause menu settings view could not be built.");
             return;
         }
 
@@ -139,6 +149,15 @@ internal sealed class PauseMenuTabModule : PtrModule
 
         tab.gameObject.SetActive(true);
         _panel = panel;
-        Context.Log.Msg($"Installed 'PtrPack' settings tab ({Context.Settings.Sections.Count} section(s)).");
+        _log.Msg($"Installed 'PtrPack' settings tab ({_settings.Sections.Count} section(s)).");
+    }
+
+    private void Reset()
+    {
+        _pause = null;
+        _tab = null;
+        _panel = null;
+        _needsDefault = false;
+        _warned = false;
     }
 }

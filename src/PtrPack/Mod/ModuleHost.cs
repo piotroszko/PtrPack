@@ -13,6 +13,7 @@ internal sealed class ModuleHost
     private readonly MelonLogger.Instance _logger;
     private readonly WindowManager _windows;
     private readonly ModSettings _settings = new ModSettings();
+    private readonly PauseMenuSettings _pauseMenuSettings;
     private readonly List<PtrModule> _modules = new List<PtrModule>();
     private readonly HashSet<PtrModule> _faulted = new HashSet<PtrModule>();
     private bool _gameplayActive;
@@ -21,6 +22,7 @@ internal sealed class ModuleHost
     {
         _logger = logger;
         _windows = windows;
+        _pauseMenuSettings = new PauseMenuSettings(_settings, new ModuleLog(_logger, "Settings"));
     }
 
     internal void Register(PtrModule module)
@@ -70,6 +72,8 @@ internal sealed class ModuleHost
 
     internal void OnUpdate()
     {
+        _pauseMenuSettings.OnUpdate();
+
         foreach (var module in _modules)
         {
             if (!module.Context.Config.IsEnabled) continue;
@@ -85,6 +89,7 @@ internal sealed class ModuleHost
         if (_gameplayActive) return;
 
         _gameplayActive = true;
+        _pauseMenuSettings.OnGameplayEnter();
         foreach (var module in _modules)
             module.Context.InGameplay = true;
 
@@ -109,6 +114,7 @@ internal sealed class ModuleHost
         if (!_gameplayActive) return;
 
         _gameplayActive = false;
+        _pauseMenuSettings.OnGameplayExit();
         foreach (var module in _modules)
             module.Context.InGameplay = false;
 
@@ -133,6 +139,8 @@ internal sealed class ModuleHost
 
     internal void Shutdown()
     {
+        _pauseMenuSettings.OnGameplayExit();
+
         foreach (var module in _modules)
         {
             if (!module.Context.Config.IsEnabled) continue;
