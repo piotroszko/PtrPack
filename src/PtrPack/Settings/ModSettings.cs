@@ -7,8 +7,10 @@ namespace PtrPack.Settings;
 internal sealed class ModSettings
 {
     private readonly List<SettingsSection> _sections = new List<SettingsSection>();
+    private bool _dirty;
 
     internal IReadOnlyList<SettingsSection> Sections => _sections;
+    internal bool IsDirty => _dirty;
 
     internal SettingsSection AddSection(string id, string title, MelonPreferences_Category category)
     {
@@ -23,8 +25,12 @@ internal sealed class ModSettings
                 throw new InvalidOperationException($"Duplicate settings section id '{id}'.");
         }
 
-        var section = new SettingsSection(id, title, category);
+        var section = new SettingsSection(id, title, category, MarkDirty);
         _sections.Add(section);
         return section;
     }
+
+    private void MarkDirty() => _dirty = true;
+
+    internal void ClearDirty() => _dirty = false;
 }

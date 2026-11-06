@@ -7,13 +7,15 @@ namespace PtrPack.Settings;
 internal sealed class SettingsSection
 {
     private readonly MelonPreferences_Category _category;
+    private readonly Action _onChanged;
     private readonly List<SettingDefinition> _settings = new List<SettingDefinition>();
 
-    internal SettingsSection(string id, string title, MelonPreferences_Category category)
+    internal SettingsSection(string id, string title, MelonPreferences_Category category, Action onChanged)
     {
         Id = id;
         Title = title;
         _category = category;
+        _onChanged = onChanged;
     }
 
     internal string Id { get; }
@@ -28,7 +30,15 @@ internal sealed class SettingsSection
     {
         EnsureUnique(key);
         var entry = _category.CreateEntry(key, defaultValue, label);
-        var setting = new ToggleSetting(key, label, entry, changed);
+        var setting = new ToggleSetting(
+            key,
+            label,
+            entry,
+            value =>
+            {
+                _onChanged();
+                changed?.Invoke(value);
+            });
         _settings.Add(setting);
         return setting;
     }
@@ -51,9 +61,23 @@ internal sealed class SettingsSection
         var entry = _category.CreateEntry(key, defaultValue, label);
         var clamped = Math.Clamp(entry.Value, min, max);
         if (clamped != entry.Value)
+        {
             entry.Value = clamped;
+            _onChanged();
+        }
 
-        var setting = new IntSliderSetting(key, label, entry, min, max, format, changed);
+        var setting = new IntSliderSetting(
+            key,
+            label,
+            entry,
+            min,
+            max,
+            format,
+            value =>
+            {
+                _onChanged();
+                changed?.Invoke(value);
+            });
         _settings.Add(setting);
         return setting;
     }

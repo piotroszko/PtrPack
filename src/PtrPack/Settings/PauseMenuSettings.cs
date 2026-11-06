@@ -1,8 +1,12 @@
+using System;
 using Il2Cpp;
 using Il2CppTMPro;
+using MelonLoader;
 using PtrPack.Diagnostics;
 using PtrPack.Ui;
 using UnityEngine;
+
+using Object = UnityEngine.Object;
 
 namespace PtrPack.Settings;
 
@@ -10,6 +14,7 @@ internal sealed class PauseMenuSettings
 {
     private const string TabName = "PtrPackTab";
     private const string PanelName = "PtrPackPanel";
+    private const float SaveDelaySeconds = 0.5f;
 
     private readonly ModSettings _settings;
     private readonly ModuleLog _log;
@@ -20,6 +25,9 @@ internal sealed class PauseMenuSettings
     private bool _active;
     private bool _needsDefault;
     private bool _warned;
+    private bool _menuOpen;
+    private bool _saveScheduled;
+    private float _saveAt;
 
     internal PauseMenuSettings(ModSettings settings, ModuleLog log)
     {
@@ -36,12 +44,20 @@ internal sealed class PauseMenuSettings
     internal void OnGameplayExit()
     {
         _active = false;
+        SaveIfDirty();
         Reset();
     }
 
     internal void OnUpdate()
     {
         if (!_active) return;
+
+        UpdateMenuState();
+        if (_saveScheduled && Time.unscaledTime >= _saveAt)
+        {
+            _saveScheduled = false;
+            SaveIfDirty();
+        }
 
         if (_needsDefault && _pause != null && _pause.mainPauseMenuTabGroup != null)
         {
@@ -85,6 +101,8 @@ internal sealed class PauseMenuSettings
             return;
 
         Install(pause);
+
+        UpdateMenuState();
     }
 
     private void Install(PauseMenu pause)
@@ -152,6 +170,44 @@ internal sealed class PauseMenuSettings
         _log.Msg($"Installed 'PtrPack' settings tab ({_settings.Sections.Count} section(s)).");
     }
 
+    private void UpdateMenuState()
+    {
+        if (_pause == null) return;
+
+        var ui = _pause.pauseMenuUI;
+        if (ui == null) return;
+
+        bool open = ui.activeInHierarchy
+                    && (_pause.pauseMenuCanvas == null || _pause.pauseMenuCanvas.enabled);
+        if (open == _menuOpen) return;
+
+        _menuOpen = open;
+        if (open)
+        {
+            _saveScheduled = false;
+            return;
+        }
+
+        _saveScheduled = true;
+        _saveAt = Time.unscaledTime + SaveDelaySeconds;
+    }
+
+    private void SaveIfDirty()
+    {
+        if (!_settings.IsDirty) return;
+
+        try
+        {
+            MelonPreferences.Save();
+            _settings.ClearDirty();
+            _log.Msg("Saved settings.");
+        }
+        catch (Exception exception)
+        {
+            _log.Error("Settings could not be saved.", exception);
+        }
+    }
+
     private void Reset()
     {
         _pause = null;
@@ -159,5 +215,8 @@ internal sealed class PauseMenuSettings
         _panel = null;
         _needsDefault = false;
         _warned = false;
+        _menuOpen = false;
+        _saveScheduled = false;
+        _saveAt = 0f;
     }
 }
