@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using MelonLoader;
 using PtrPack.Diagnostics;
 using PtrPack.Game;
+using PtrPack.Settings;
 using PtrPack.Ui;
 
 namespace PtrPack.Mod;
@@ -11,6 +12,7 @@ internal sealed class ModuleHost
 {
     private readonly MelonLogger.Instance _logger;
     private readonly WindowManager _windows;
+    private readonly ModSettings _settings = new ModSettings();
     private readonly List<PtrModule> _modules = new List<PtrModule>();
     private readonly HashSet<PtrModule> _faulted = new HashSet<PtrModule>();
     private bool _gameplayActive;
@@ -35,7 +37,8 @@ internal sealed class ModuleHost
         var context = new ModuleContext(
             new ModuleLog(_logger, module.Id),
             new ModuleConfig(module),
-            _windows);
+            _windows,
+            _settings);
 
         module.Attach(context);
         _modules.Add(module);
@@ -53,6 +56,14 @@ internal sealed class ModuleHost
                 continue;
             }
 
+            Invoke(module, nameof(PtrModule.OnRegisterSettings), () => module.OnRegisterSettings(_settings));
+        }
+
+        _logger.Msg($"[{ModInfo.Name}] {_settings.Sections.Count} settings section(s) registered.");
+
+        foreach (var module in _modules)
+        {
+            if (!module.Context.Config.IsEnabled) continue;
             Invoke(module, nameof(PtrModule.OnInitialize), module.OnInitialize);
         }
     }

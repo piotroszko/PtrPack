@@ -1,4 +1,7 @@
+using PtrPack.Settings;
 namespace PtrPack.Mod;
+
+
 
 internal abstract class PtrModule
 {
@@ -9,6 +12,7 @@ internal abstract class PtrModule
 
     internal void Attach(ModuleContext context) => Context = context;
 
+    internal virtual void OnRegisterSettings(ModSettings settings) { }
     internal virtual void OnInitialize() { }
     internal virtual void OnUpdate() { }
     internal virtual void OnGameplayEnter() { }
