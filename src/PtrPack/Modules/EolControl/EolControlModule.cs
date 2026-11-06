@@ -43,15 +43,27 @@ internal sealed class EolControlModule : PtrModule
             _harmony = new HarmonyLib.Harmony("PtrPack.EolControl");
             _harmony.PatchAll(typeof(ServerTickTimerPatch));
             _harmony.PatchAll(typeof(NetworkSwitchTickTimerPatch));
-            Context.Log.Msg(
-                $"EOL control active (disabled={_disabled.Value}, multiplier={_multiplier.Value}x).");
         }
         catch (Exception exception)
         {
             Context.Log.Error("EOL patches could not be installed; EOL settings are inactive.", exception);
             _harmony?.UnpatchSelf();
             _harmony = null;
+            return;
         }
+
+        try
+        {
+            _harmony.PatchAll(typeof(ServerEolUiPatch));
+            _harmony.PatchAll(typeof(NetworkSwitchEolUiPatch));
+        }
+        catch (Exception exception)
+        {
+            Context.Log.Warning($"EOL UI patches could not be installed: {exception}");
+        }
+
+        Context.Log.Msg(
+            $"EOL control active (disabled={_disabled.Value}, multiplier={_multiplier.Value}x).");
     }
 
     internal override void OnGameplayEnter() => EolControl.ResetTicks();
