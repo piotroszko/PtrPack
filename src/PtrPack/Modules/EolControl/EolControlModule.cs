@@ -1,7 +1,7 @@
 using System;
 using MelonLoader;
-using PtrPack.Mod;
-using PtrPack.Settings;
+using PtrLib.Mod;
+using PtrLib.Settings;
 
 namespace PtrPack.Modules;
 
@@ -14,10 +14,10 @@ internal sealed class EolControlModule : PtrModule
     private ToggleSetting? _disabled;
     private IntSliderSetting? _multiplier;
 
-    internal override string Id => "EolControl";
-    internal override string DisplayName => "EOL";
+    public override string Id => "EolControl";
+    public override string DisplayName => "EOL";
 
-    internal override void OnRegisterSettings(ModSettings settings)
+    public override void OnRegisterSettings(ModSettings settings)
     {
         var section = settings.AddSection(Id, DisplayName, Context.Config.Category);
         _disabled = section.AddToggle(DisableKey, "Disable EOL", false, EolControl.SetDisabled);
@@ -46,7 +46,7 @@ internal sealed class EolControlModule : PtrModule
             });
     }
 
-    internal override void OnInitialize()
+    public override void OnInitialize()
     {
         if (_disabled == null || _multiplier == null)
             throw new InvalidOperationException("EOL settings were not registered.");
@@ -81,10 +81,10 @@ internal sealed class EolControlModule : PtrModule
             $"EOL control active (disabled={_disabled.Value}, multiplier={_multiplier.Value}x).");
     }
 
-    internal override void OnGameplayEnter() => EolControl.ResetTicks();
-    internal override void OnGameplayExit() => EolControl.ResetTicks();
+    public override void OnGameplayEnter() => EolControl.ResetTicks();
+    public override void OnGameplayExit() => EolControl.ResetTicks();
 
-    internal override void OnShutdown()
+    public override void OnShutdown()
     {
         _harmony?.UnpatchSelf();
         _harmony = null;

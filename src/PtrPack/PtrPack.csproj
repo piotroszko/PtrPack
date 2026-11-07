@@ -13,6 +13,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\ptrLib\src\PtrLib\PtrLib.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="MelonLoader">
       <HintPath>$(GameDir)\MelonLoader\net6\MelonLoader.dll</HintPath>
       <Private>false</Private>

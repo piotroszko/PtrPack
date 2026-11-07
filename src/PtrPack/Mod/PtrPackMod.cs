@@ -1,7 +1,8 @@
 using System;
 using MelonLoader;
-using PtrPack.Ui;
+using PtrLib.Ui;
 using PtrPack.Modules;
+using PtrLib.Mod;
 
 [assembly: MelonInfo(typeof(PtrPack.Mod.PtrPackMod), PtrPack.Mod.ModInfo.Name, PtrPack.Mod.ModInfo.Version, PtrPack.Mod.ModInfo.Author)]
 [assembly: MelonGame("Waseku", "Data Center")]
@@ -18,7 +19,7 @@ public sealed class PtrPackMod : MelonMod
 
         try
         {
-            _host = new ModuleHost(LoggerInstance, new WindowManager());
+            _host = new ModuleHost(ModInfo.Name, LoggerInstance, new WindowManager());
             foreach (var module in CreateModules())
                 _host.Register(module);
             _host.Initialize();
