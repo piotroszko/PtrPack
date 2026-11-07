@@ -21,7 +21,8 @@ internal sealed class ClientApp
         string lowestFreeIp,
         int usedIps,
         int totalIps,
-        int requiredServerType)
+        int requiredServerType,
+        Sprite? logo)
     {
         CustomerBaseId = customerBaseId;
         CustomerId = customerId;
@@ -34,6 +35,7 @@ internal sealed class ClientApp
         UsedIps = usedIps;
         TotalIps = totalIps;
         RequiredServerType = requiredServerType;
+        Logo = logo;
     }
 
     internal int CustomerBaseId { get; }
@@ -47,6 +49,7 @@ internal sealed class ClientApp
     internal int UsedIps { get; }
     internal int TotalIps { get; }
     internal int RequiredServerType { get; }
+    internal Sprite? Logo { get; }
 
     internal List<RoutedIpOption> RoutedOptions { get; } = new List<RoutedIpOption>();
 
@@ -169,7 +172,8 @@ internal static class ClientHelperData
                     lowest,
                     used,
                     total,
-                    requiredType);
+                    requiredType,
+                    item.logo);
                 result.Add(client);
             }
         }

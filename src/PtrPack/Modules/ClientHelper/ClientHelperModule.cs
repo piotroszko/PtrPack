@@ -315,10 +315,11 @@ internal sealed class ClientHelperModule : PtrModule
             if (client.HasFreeIp)
             {
                 _window!.AddRow(
-                    client.Title,
+                    $"App {client.AppId}",
                     BuildDetail(client),
                     "Use",
-                    () => FillServer(client));
+                    () => FillServer(client),
+                    client.Logo);
                 anyRow = true;
             }
 
@@ -329,10 +330,11 @@ internal sealed class ClientHelperModule : PtrModule
 
                 string ip = option.LowestFreeIp;
                 _window!.AddRow(
-                    $"{client.Title}  [routed]",
+                    $"App {client.AppId}  [routed]",
                     option.Detail,
                     "Use",
-                    () => FillServerIp(ip));
+                    () => FillServerIp(ip),
+                    client.Logo);
                 anyRow = true;
             }
         }
@@ -395,10 +397,11 @@ internal sealed class ClientHelperModule : PtrModule
                     _ => "Route",
                 };
                 _window!.AddRow(
-                    $"{item.Status}  —  {item.Client.Title}",
+                    $"{item.Status}  —  App {item.Client.AppId}",
                     item.Detail,
                     action,
-                    () => FillRouter(item));
+                    () => FillRouter(item),
+                    item.Client.Logo);
             }
         }
 
@@ -488,10 +491,11 @@ internal sealed class ClientHelperModule : PtrModule
             {
                 int gapPort = gap.PortIndex;
                 _window.AddRow(
-                    $"{gap.Client.Title}  —  VLAN {gap.Client.Vlan}",
+                    $"App {gap.Client.AppId}  —  VLAN {gap.Client.Vlan}",
                     gap.Detail,
                     gapPort >= 0 ? "Select" : string.Empty,
-                    gapPort >= 0 ? () => _switchConfig.ClickPort(gapPort) : null);
+                    gapPort >= 0 ? () => _switchConfig.ClickPort(gapPort) : null,
+                    gap.Client.Logo);
             }
         }
 
