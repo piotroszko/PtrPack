@@ -97,7 +97,8 @@ internal sealed class ClientHelperModule : PtrModule
                     "Client Helper",
                     new Vector2(560f, 560f),
                     Vector2.zero,
-                    25);
+                    25,
+                    false);
             }
             catch (Exception exception)
             {

@@ -120,8 +120,14 @@ internal static class ClientHelperData
                     continue;
 
                 int requiredType = Get(customerBase.appIdToServerType, appId, -1);
-                if (serverType >= 0 && requiredType >= 0 && requiredType != serverType)
-                    continue;
+                if (server != null)
+                {
+                    int assignedApp = server.appID;
+                    bool eligible = assignedApp == appId ||
+                        (assignedApp < 0 && requiredType >= 0 && server.serverType == requiredType);
+                    if (!eligible)
+                        continue;
+                }
 
                 int vlan = Get(customerBase.vlanIdsPerApp, appId, 0);
                 string gateway = map.GetGatewayForSubnet(subnet) ?? string.Empty;
