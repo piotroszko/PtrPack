@@ -251,7 +251,8 @@ internal sealed class ClientHelperModule : PtrModule
             clients = ClientHelperData.Snapshot(activeServer);
             Context.Log.Msg(
                 $"Client helper: server={activeServer?.ServerID ?? "null"} " +
-                $"type={activeServer?.serverType ?? -1} app={activeServer?.appID ?? -2}.");
+                $"type={activeServer?.serverType ?? -1} app={activeServer?.appID ?? -2} " +
+                $"eligibleCustomers={ClientHelperData.LastEligibleCount}.");
         }
         catch (Exception exception)
         {
@@ -285,6 +286,9 @@ internal sealed class ClientHelperModule : PtrModule
         {
             foreach (var client in clients)
             {
+                if (!client.HasFreeIp)
+                    continue;
+
                 Context.Log.Msg(
                     $"Client helper: adding row for {client.Title}, requiredType={client.RequiredServerType}.");
                 var row = _window.AddRow(
