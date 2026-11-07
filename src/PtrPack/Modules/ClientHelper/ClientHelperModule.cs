@@ -113,7 +113,7 @@ internal sealed class ClientHelperModule : PtrModule
             }
             catch (Exception exception)
             {
-                Context.Log.Warning($"Client helper window could not be created: {exception.Message}");
+                Context.Log.Warning($"Client helper window could not be created: {exception}");
                 _templateWarningLogged = true;
             }
 
