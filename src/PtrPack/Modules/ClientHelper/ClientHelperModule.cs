@@ -154,7 +154,7 @@ internal sealed class ClientHelperModule : PtrModule
     private void EnsureReferences()
     {
         if (_setIp == null)
-            _setIp = UiFactory.FindSceneComponent<SetIP>();
+            _setIp = FindSetIp();
         if (_routerConfig == null)
             _routerConfig = UiFactory.FindSceneComponent<RouterConfiguration>();
 
@@ -163,6 +163,30 @@ internal sealed class ClientHelperModule : PtrModule
             _referencesLogged = true;
             Context.Log.Msg($"Client helper references: SetIP={_setIp != null}, Router={_routerConfig != null}.");
         }
+    }
+
+    private static SetIP? FindSetIp()
+    {
+        var all = Resources.FindObjectsOfTypeAll<SetIP>();
+        SetIP? fallback = null;
+        for (int i = 0; i < all.Length; i++)
+        {
+            var candidate = all[i];
+            if (candidate == null || !candidate.gameObject.scene.IsValid())
+                continue;
+
+            if (fallback == null)
+                fallback = candidate;
+
+            if (candidate.server != null &&
+                candidate.canvas != null &&
+                candidate.canvas.activeInHierarchy)
+            {
+                return candidate;
+            }
+        }
+
+        return fallback;
     }
 
     private ViewMode DetectMode()
@@ -223,7 +247,11 @@ internal sealed class ClientHelperModule : PtrModule
         List<ClientApp> clients;
         try
         {
-            clients = ClientHelperData.Snapshot(mode == ViewMode.Server ? _setIp?.server : null);
+            var activeServer = mode == ViewMode.Server ? _setIp?.server : null;
+            clients = ClientHelperData.Snapshot(activeServer);
+            Context.Log.Msg(
+                $"Client helper: server={activeServer?.ServerID ?? "null"} " +
+                $"type={activeServer?.serverType ?? -1} app={activeServer?.appID ?? -2}.");
         }
         catch (Exception exception)
         {
@@ -257,7 +285,8 @@ internal sealed class ClientHelperModule : PtrModule
         {
             foreach (var client in clients)
             {
-                Context.Log.Msg($"Client helper: adding row for {client.Title}.");
+                Context.Log.Msg(
+                    $"Client helper: adding row for {client.Title}, requiredType={client.RequiredServerType}.");
                 var row = _window.AddRow(
                     client.Title,
                     BuildDetail(client),

@@ -19,7 +19,8 @@ internal sealed class ClientApp
         string gateway,
         string lowestFreeIp,
         int usedIps,
-        int totalIps)
+        int totalIps,
+        int requiredServerType)
     {
         CustomerBaseId = customerBaseId;
         CustomerName = customerName;
@@ -30,6 +31,7 @@ internal sealed class ClientApp
         LowestFreeIp = lowestFreeIp;
         UsedIps = usedIps;
         TotalIps = totalIps;
+        RequiredServerType = requiredServerType;
     }
 
     internal int CustomerBaseId { get; }
@@ -41,6 +43,7 @@ internal sealed class ClientApp
     internal string LowestFreeIp { get; }
     internal int UsedIps { get; }
     internal int TotalIps { get; }
+    internal int RequiredServerType { get; }
 
     internal bool HasFreeIp => !string.IsNullOrEmpty(LowestFreeIp);
 
@@ -155,7 +158,8 @@ internal static class ClientHelperData
                     gateway,
                     lowest,
                     used,
-                    total));
+                    total,
+                    requiredType));
             }
         }
 
