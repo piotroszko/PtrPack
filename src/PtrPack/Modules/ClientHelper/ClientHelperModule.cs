@@ -55,6 +55,71 @@ internal sealed class ClientHelperModule : PtrModule
             "ShowOnSwitchView",
             "Show port audit on the switch screen",
             true);
+
+        section.AddAction(
+            "ResetServerWindow",
+            "Reset server helper position",
+            "Reset",
+            () => ResetWindowPosition(ViewMode.Server));
+        section.AddAction(
+            "CenterServerWindow",
+            "Center server helper",
+            "Center",
+            () => CenterWindow(ViewMode.Server));
+        section.AddAction(
+            "ResetRouterWindow",
+            "Reset router helper position",
+            "Reset",
+            () => ResetWindowPosition(ViewMode.Router));
+        section.AddAction(
+            "CenterRouterWindow",
+            "Center router helper",
+            "Center",
+            () => CenterWindow(ViewMode.Router));
+        section.AddAction(
+            "ResetSwitchWindow",
+            "Reset switch helper position",
+            "Reset",
+            () => ResetWindowPosition(ViewMode.Switch));
+        section.AddAction(
+            "CenterSwitchWindow",
+            "Center switch helper",
+            "Center",
+            () => CenterWindow(ViewMode.Switch));
+    }
+
+    private void ResetWindowPosition(ViewMode mode)
+    {
+        string key = PositionKey(mode);
+        bool active = _window != null &&
+                      string.Equals(_window.PositionKey, key, StringComparison.Ordinal);
+        if (active)
+            CloseWindow();
+
+        NativeWindow.ClearSavedPosition(key);
+
+        if (active)
+        {
+            _placedMode = ViewMode.None;
+            _lastMode = ViewMode.None;
+            _renderedMode = ViewMode.None;
+            _renderedSignature = string.Empty;
+        }
+    }
+
+    private void CenterWindow(ViewMode mode)
+    {
+        string key = PositionKey(mode);
+        if (_window != null &&
+            string.Equals(_window.PositionKey, key, StringComparison.Ordinal))
+        {
+            _window.CenterInParent();
+            _placedMode = mode;
+            return;
+        }
+
+        NativeWindow.ClearSavedPosition(key);
+        NativeWindow.RequestCenter(key);
     }
 
     public override void OnGameplayEnter()
