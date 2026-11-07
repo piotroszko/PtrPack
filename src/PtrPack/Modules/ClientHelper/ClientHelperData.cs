@@ -3,66 +3,15 @@ using System.Collections.Generic;
 using Il2Cpp;
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using PtrLib.Interop;
+using PtrLib.Networking;
 using PtrLib.Ui;
 using UnityEngine;
 
 namespace PtrPack.Modules.ClientHelper;
 
-internal sealed class ClientApp
-{
-    internal ClientApp(
-        int customerBaseId,
-        int customerId,
-        string customerName,
-        int appId,
-        string subnet,
-        int vlan,
-        string gateway,
-        string lowestFreeIp,
-        int usedIps,
-        int totalIps,
-        int requiredServerType,
-        Sprite? logo)
-    {
-        CustomerBaseId = customerBaseId;
-        CustomerId = customerId;
-        CustomerName = customerName;
-        AppId = appId;
-        Subnet = subnet;
-        Vlan = vlan;
-        Gateway = gateway;
-        LowestFreeIp = lowestFreeIp;
-        UsedIps = usedIps;
-        TotalIps = totalIps;
-        RequiredServerType = requiredServerType;
-        Logo = logo;
-    }
-
-    internal int CustomerBaseId { get; }
-    internal int CustomerId { get; }
-    internal string CustomerName { get; }
-    internal int AppId { get; }
-    internal string Subnet { get; }
-    internal int Vlan { get; }
-    internal string Gateway { get; }
-    internal string LowestFreeIp { get; }
-    internal int UsedIps { get; }
-    internal int TotalIps { get; }
-    internal int RequiredServerType { get; }
-    internal Sprite? Logo { get; }
-
-    internal List<RoutedIpOption> RoutedOptions { get; } = new List<RoutedIpOption>();
-
-    internal bool HasFreeIp => !string.IsNullOrEmpty(LowestFreeIp);
-
-    internal string Title => $"{CustomerName}  •  App {AppId}";
-}
-
 internal static class ClientHelperData
 {
-    private static HashSet<string>? _usedIpsCache;
-    private static float _usedIpsCacheAt = -1000f;
-
     internal static List<ClientApp> Snapshot(
         Server? server = null,
         string? targetDeviceId = null,
@@ -74,7 +23,7 @@ internal static class ClientHelperData
             return result;
 
         var setIp = UiFactory.FindSceneComponent<SetIP>();
-        var usedIps = CollectUsedIps();
+        var usedIps = ClientIpPool.CollectUsedIps();
 
         var customerBases = new List<CustomerBase>();
         var customerBaseMap = map.customerBases;
@@ -121,13 +70,13 @@ internal static class ClientHelperData
                     appIds.Add(item.appTypes[i]);
             }
 
-            bool reachable = IsCustomerReachable(map, server, targetDeviceId, customerBase.customerID);
+            bool reachable = ClientReachability.IsCustomerReachable(map, server, targetDeviceId, customerBase.customerID);
             if (!reachable)
                 continue;
 
             foreach (int appId in appIds)
             {
-                string subnet = Get(customerBase.subnetsPerApp, appId, string.Empty);
+                string subnet = customerBase.subnetsPerApp.ValueOrDefault(appId, string.Empty);
                 if (string.IsNullOrEmpty(subnet))
                     continue;
 
@@ -135,20 +84,20 @@ internal static class ClientHelperData
                 if (!seen.Add(key))
                     continue;
 
-                int requiredType = Get(customerBase.appIdToServerType, appId, -1);
+                int requiredType = customerBase.appIdToServerType.ValueOrDefault(appId, -1);
                 if (server != null && server.appID >= 0 && server.appID != appId)
                     continue;
 
-                int vlan = Get(customerBase.vlanIdsPerApp, appId, 0);
+                int vlan = customerBase.vlanIdsPerApp.ValueOrDefault(appId, 0);
                 string gateway = map.GetGatewayForSubnet(subnet) ?? string.Empty;
 
                 Il2CppStringArray? usableIps = null;
                 customerBase.usableIpsPerApp?.TryGetValue(appId, out usableIps);
 
-                int used = CountUsed(customerBase, usableIps, usedIps);
+                int used = ClientIpPool.CountUsed(customerBase, usableIps, usedIps);
                 int total = usableIps == null ? 0 : usableIps.Length;
 
-                string lowest = FindLowestFree(
+                string lowest = ClientIpPool.FindLowestFree(
                     usableIps,
                     subnet,
                     gateway,
@@ -192,7 +141,7 @@ internal static class ClientHelperData
         if (map == null)
             return result;
 
-        HashSet<int>? reachableCustomers = GetReachableCustomers(map, targetDeviceId);
+        HashSet<int>? reachableCustomers = ClientReachability.GetReachableCustomers(map, targetDeviceId);
         var customerBases = new List<CustomerBase>();
         var customerBaseMap = map.customerBases;
         if (customerBaseMap != null)
@@ -242,7 +191,7 @@ internal static class ClientHelperData
 
             foreach (int appId in appIds)
             {
-                string subnet = Get(customerBase.subnetsPerApp, appId, string.Empty);
+                string subnet = customerBase.subnetsPerApp.ValueOrDefault(appId, string.Empty);
                 if (string.IsNullOrEmpty(subnet))
                     continue;
 
@@ -250,9 +199,9 @@ internal static class ClientHelperData
                 if (!seen.Add(key))
                     continue;
 
-                int vlan = Get(customerBase.vlanIdsPerApp, appId, 0);
+                int vlan = customerBase.vlanIdsPerApp.ValueOrDefault(appId, 0);
                 string gateway = map.GetGatewayForSubnet(subnet) ?? string.Empty;
-                int requiredType = Get(customerBase.appIdToServerType, appId, -1);
+                int requiredType = customerBase.appIdToServerType.ValueOrDefault(appId, -1);
                 result.Add(new ClientApp(
                     customerBase.customerBaseID,
                     customerBase.customerID,
@@ -276,224 +225,5 @@ internal static class ClientHelperData
         });
         return result;
     }
-
-    private static HashSet<int>? GetReachableCustomers(
-        NetworkMap map,
-        string? targetDeviceId)
-    {
-        if (string.IsNullOrEmpty(targetDeviceId))
-            return null;
-
-        try
-        {
-            var paths = map.FindAllReachablePathsFrom(targetDeviceId);
-            if (paths == null)
-                return null;
-
-            var customers = new HashSet<int>();
-            var keys = new Il2CppStringArray(paths.Count);
-            paths.Keys.CopyTo(keys, 0);
-            for (int i = 0; i < keys.Length; i++)
-            {
-                var device = map.GetDevice(keys[i]);
-                if (device != null && device.CustomerID >= 0)
-                    customers.Add(device.CustomerID);
-            }
-
-            return customers;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static bool IsCustomerReachable(
-        NetworkMap map,
-        Server? server,
-        string? targetDeviceId,
-        int customerId)
-    {
-        string? target = server?.ServerID;
-        if (string.IsNullOrEmpty(target))
-            target = targetDeviceId;
-
-        if (string.IsNullOrEmpty(target))
-            return true;
-        try
-        {
-            var paths = map.FindAllShortestPathsFromCustomer(customerId, target);
-            int count = paths == null ? 0 : paths.Count;
-            if (count > 0)
-                return true;
-        }
-        catch (Exception exception)
-        {
-            MelonLoader.MelonLogger.Warning(
-                $"Client helper: path check failed for customer #{customerId}: {exception.Message}");
-        }
-
-        try
-        {
-            var devices = map.devices;
-            if (devices == null)
-                return true;
-
-                bool sawCustomerDevice = false;
-                var keys = new Il2CppStringArray(devices.Count);
-                devices.Keys.CopyTo(keys, 0);
-                for (int i = 0; i < keys.Length; i++)
-                {
-                    var device = devices[keys[i]];
-                    if (device == null || device.CustomerID != customerId)
-                        continue;
-
-                    sawCustomerDevice = true;
-                    if (map.IsPhysicallyReachable(target, device.Name))
-                        return true;
-                }
-
-                if (!sawCustomerDevice)
-                    return true;
-        }
-        catch (Exception exception)
-        {
-            MelonLoader.MelonLogger.Warning(
-                $"Client helper: physical check failed for customer #{customerId}: {exception.Message}");
-        }
-
-        return false;
-    }
-
-    private static HashSet<string> CollectUsedIps()
-    {
-        float now = UnityEngine.Time.unscaledTime;
-        if (_usedIpsCache != null && now - _usedIpsCacheAt < 0.5f)
-            return _usedIpsCache;
-
-        var used = new HashSet<string>(StringComparer.Ordinal);
-        var servers = UnityEngine.Object.FindObjectsOfType<Server>();
-        for (int i = 0; i < servers.Length; i++)
-        {
-            var server = servers[i];
-            if (server == null)
-                continue;
-
-            string ip = server.IP;
-            if (!string.IsNullOrWhiteSpace(ip) && ip != "0.0.0.0")
-                used.Add(ip);
-        }
-
-        _usedIpsCache = used;
-        _usedIpsCacheAt = now;
-        return used;
-    }
-
-    internal static void ResetCaches()
-    {
-        _usedIpsCache = null;
-        _usedIpsCacheAt = -1000f;
-    }
-
-    private static int CountUsed(CustomerBase customerBase, Il2CppStringArray? usableIps, HashSet<string> usedIps)
-    {
-        if (usableIps == null)
-            return 0;
-
-        int used = 0;
-        for (int i = 0; i < usableIps.Length; i++)
-        {
-            string ip = usableIps[i];
-            if (!string.IsNullOrWhiteSpace(ip) && usedIps.Contains(ip))
-                used++;
-        }
-
-        return used;
-    }
-
-    private static string FindLowestFree(
-        Il2CppStringArray? usableIps,
-        string subnet,
-        string gateway,
-        CustomerBase customerBase,
-        SetIP? setIp,
-        HashSet<string> usedIps)
-    {
-        var candidates = new List<string>();
-        if (usableIps != null)
-        {
-            for (int i = 0; i < usableIps.Length; i++)
-            {
-                string ip = usableIps[i];
-                if (string.IsNullOrWhiteSpace(ip)) continue;
-                if (!string.IsNullOrEmpty(gateway) && string.Equals(ip, gateway, StringComparison.Ordinal)) continue;
-                candidates.Add(ip);
-            }
-        }
-
-        if (candidates.Count == 0 && setIp != null && !string.IsNullOrEmpty(subnet))
-        {
-            var generated = setIp.GetUsableIPsFromSubnet(subnet);
-            if (generated != null)
-            {
-                for (int i = 0; i < generated.Length; i++)
-                {
-                    string ip = generated[i];
-                    if (string.IsNullOrWhiteSpace(ip)) continue;
-                    if (!string.IsNullOrEmpty(gateway) && string.Equals(ip, gateway, StringComparison.Ordinal)) continue;
-                    if (!customerBase.IsIPPresent(ip)) continue;
-                    candidates.Add(ip);
-                }
-            }
-        }
-
-        candidates.Sort(CompareIp);
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            if (!usedIps.Contains(candidates[i]))
-                return candidates[i];
-        }
-
-        return string.Empty;
-    }
-
-    private static int CompareIp(string left, string right)
-    {
-        if (TryParseIp(left, out uint a) && TryParseIp(right, out uint b))
-            return a.CompareTo(b);
-        return string.Compare(left, right, StringComparison.Ordinal);
-    }
-
-    private static bool TryParseIp(string text, out uint value)
-    {
-        value = 0;
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-
-        string[] parts = text.Split('.');
-        if (parts.Length != 4)
-            return false;
-
-        uint result = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            if (!byte.TryParse(parts[i], out byte octet))
-                return false;
-            result = (result << 8) | octet;
-        }
-
-        value = result;
-        return true;
-    }
-
-    private static T Get<T>(
-        Il2CppSystem.Collections.Generic.Dictionary<int, T>? dictionary,
-        int key,
-        T fallback)
-    {
-        if (dictionary == null)
-            return fallback;
-
-        return dictionary.TryGetValue(key, out T value) ? value : fallback;
-    }
+    internal static void ResetCaches() => ClientIpPool.ResetCaches();
 }

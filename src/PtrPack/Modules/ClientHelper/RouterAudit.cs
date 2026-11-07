@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Il2Cpp;
+using PtrLib.Networking;
 
 namespace PtrPack.Modules.ClientHelper;
 
@@ -219,7 +220,7 @@ internal static class RouterAudit
             if (string.IsNullOrEmpty(route.targetIp) ||
                 string.IsNullOrEmpty(client.Gateway) ||
                 string.Equals(route.targetIp, client.Gateway, StringComparison.OrdinalIgnoreCase) ||
-                IsInSubnet(route.targetIp, client.Subnet))
+                Ipv4Subnet.Contains(route.targetIp, client.Subnet))
             {
                 return route;
             }
@@ -297,81 +298,23 @@ internal static class RouterAudit
 
     private static string SubnetForIp(string ip)
     {
-        if (!TryParseIp(ip, out uint address))
+        if (!Ipv4Address.TryParse(ip, out uint address))
             return string.Empty;
 
-        uint mask = 0xFFFFFF00u;
-        uint network = address & mask;
-        return $"{network >> 24}.{(network >> 16) & 0xFF}.{(network >> 8) & 0xFF}.{network & 0xFF}/24";
+        return Ipv4Address.Format(Ipv4Subnet.Network(address, 24)) + "/24";
     }
 
     private static bool OverlapsAny(string cidr, List<string> used)
     {
-        if (!TryParseCidr(cidr, out uint network, out int prefix))
+        if (!Ipv4Subnet.TryParseCidr(cidr, out _, out _))
             return true;
 
         for (int i = 0; i < used.Count; i++)
         {
-            if (TryParseCidr(used[i], out uint other, out int otherPrefix) &&
-                Overlaps(network, prefix, other, otherPrefix))
-            {
+            if (Ipv4Subnet.Overlaps(cidr, used[i]))
                 return true;
-            }
         }
 
         return false;
-    }
-
-    private static bool Overlaps(uint a, int aPrefix, uint b, int bPrefix)
-    {
-        int prefix = Math.Min(aPrefix, bPrefix);
-        uint mask = prefix == 0 ? 0u : 0xFFFFFFFFu << (32 - prefix);
-        return (a & mask) == (b & mask);
-    }
-
-    private static bool TryParseCidr(string cidr, out uint network, out int prefix)
-    {
-        network = 0;
-        prefix = 0;
-        int slash = cidr.IndexOf('/');
-        if (slash < 0)
-            return false;
-
-        return TryParseIp(cidr.Substring(0, slash), out network) &&
-            int.TryParse(cidr.Substring(slash + 1), out prefix) &&
-            prefix >= 0 && prefix <= 32;
-    }
-
-    private static bool IsInSubnet(string ip, string cidr)
-    {
-        if (!TryParseCidr(cidr, out uint network, out int prefix) ||
-            !TryParseIp(ip, out uint address))
-        {
-            return false;
-        }
-
-        uint mask = prefix == 0 ? 0u : 0xFFFFFFFFu << (32 - prefix);
-        return (address & mask) == (network & mask);
-    }
-
-    private static bool TryParseIp(string text, out uint value)
-    {
-        value = 0;
-        if (string.IsNullOrEmpty(text))
-            return false;
-
-        string[] parts = text.Split('.');
-        if (parts.Length != 4)
-            return false;
-
-        for (int i = 0; i < parts.Length; i++)
-        {
-            if (!byte.TryParse(parts[i], out byte part))
-                return false;
-
-            value = (value << 8) | part;
-        }
-
-        return true;
     }
 }

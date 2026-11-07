@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Il2Cpp;
+using PtrLib.Networking;
 using UnityEngine;
 
 namespace PtrPack.Modules.ClientHelper;
@@ -108,7 +109,7 @@ internal static class RoutedSubnets
                     gateway = route.sourceIp ?? string.Empty;
 
                 string free = FindLowestFree(source.subnetCidr, gateway, usedIps);
-                int hostCount = HostCount(source.subnetCidr);
+                int hostCount = Ipv4Subnet.HostCount(source.subnetCidr);
                 int used = CountUsedInSubnet(source.subnetCidr, usedIps);
                 client.RoutedOptions.Add(new RoutedIpOption(
                     routerId,
@@ -149,7 +150,7 @@ internal static class RoutedSubnets
             return true;
         }
 
-        return IpInSubnet(targetIp, client.Subnet);
+        return Ipv4Subnet.Contains(targetIp, client.Subnet);
     }
 
     private static string FindLowestFree(
@@ -157,7 +158,7 @@ internal static class RoutedSubnets
         string gateway,
         HashSet<string> usedIps)
     {
-        if (!TryParseCidr(cidr, out uint network, out int prefix) || prefix > 30)
+        if (!Ipv4Subnet.TryParseCidr(cidr, out uint network, out int prefix) || prefix > 30)
             return string.Empty;
 
         uint broadcast = network | (prefix == 0 ? uint.MaxValue : 0xFFFFFFFFu >> prefix);
@@ -169,7 +170,7 @@ internal static class RoutedSubnets
         int limit = 65536;
         for (uint value = first; value <= last && limit-- > 0; value++)
         {
-            string ip = FormatIp(value);
+            string ip = Ipv4Address.Format(value);
             if (string.Equals(ip, gateway, StringComparison.Ordinal))
                 continue;
             if (usedIps.Contains(ip))
@@ -180,80 +181,20 @@ internal static class RoutedSubnets
         return string.Empty;
     }
 
-    private static int HostCount(string cidr)
-    {
-        if (!TryParseCidr(cidr, out _, out int prefix) || prefix > 30)
-            return 0;
-
-        long count = 1L << (32 - prefix);
-        return (int)Math.Max(0, count - 2);
-    }
-
     private static int CountUsedInSubnet(string cidr, HashSet<string> usedIps)
     {
-        if (!TryParseCidr(cidr, out uint network, out int prefix))
+        if (!Ipv4Subnet.TryParseCidr(cidr, out uint network, out int prefix))
             return 0;
 
         uint broadcast = network | (prefix == 0 ? uint.MaxValue : 0xFFFFFFFFu >> prefix);
         int used = 0;
         foreach (string ip in usedIps)
         {
-            if (TryParseIp(ip, out uint value) && value > network && value < broadcast)
+            if (Ipv4Address.TryParse(ip, out uint value) && value > network && value < broadcast)
                 used++;
         }
 
         return used;
     }
 
-    private static bool IpInSubnet(string ip, string cidr)
-    {
-        if (!TryParseCidr(cidr, out uint network, out int prefix) ||
-            !TryParseIp(ip, out uint value))
-        {
-            return false;
-        }
-
-        uint mask = prefix == 0 ? 0u : 0xFFFFFFFFu << (32 - prefix);
-        return (value & mask) == (network & mask);
-    }
-
-    private static bool TryParseCidr(string cidr, out uint network, out int prefix)
-    {
-        network = 0;
-        prefix = 0;
-        int slash = cidr.IndexOf('/');
-        if (slash < 0)
-            return false;
-
-        return TryParseIp(cidr.Substring(0, slash), out network) &&
-            int.TryParse(cidr.Substring(slash + 1), out prefix) &&
-            prefix >= 0 && prefix <= 32;
-    }
-
-    private static bool TryParseIp(string text, out uint value)
-    {
-        value = 0;
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-
-        string[] parts = text.Split('.');
-        if (parts.Length != 4)
-            return false;
-
-        uint result = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            if (!byte.TryParse(parts[i], out byte octet))
-                return false;
-            result = (result << 8) | octet;
-        }
-
-        value = result;
-        return true;
-    }
-
-    private static string FormatIp(uint value)
-    {
-        return $"{value >> 24}.{(value >> 16) & 0xFF}.{(value >> 8) & 0xFF}.{value & 0xFF}";
-    }
 }
