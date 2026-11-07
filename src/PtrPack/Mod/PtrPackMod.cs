@@ -2,6 +2,7 @@ using System;
 using MelonLoader;
 using PtrLib.Ui;
 using PtrPack.Modules;
+using PtrPack.Modules.ClientHelper;
 using PtrLib.Mod;
 
 [assembly: MelonInfo(typeof(PtrPack.Mod.PtrPackMod), PtrPack.Mod.ModInfo.Name, PtrPack.Mod.ModInfo.Version, PtrPack.Mod.ModInfo.Author)]
@@ -45,5 +46,6 @@ public sealed class PtrPackMod : MelonMod
     private static PtrModule[] CreateModules() => new PtrModule[]
     {
         new EolControlModule(),
+        new ClientHelperModule(),
     };
 }
