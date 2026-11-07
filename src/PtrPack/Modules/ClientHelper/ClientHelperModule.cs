@@ -108,7 +108,8 @@ internal sealed class ClientHelperModule : PtrModule
                     new Vector2(660f, 620f),
                     Vector2.zero,
                     25,
-                    false);
+                    false,
+                    PositionKey(mode));
             }
             catch (Exception exception)
             {
@@ -126,6 +127,17 @@ internal sealed class ClientHelperModule : PtrModule
         if (_window == null)
             return;
 
+        string positionKey = PositionKey(mode);
+        if (!string.Equals(_window.PositionKey, positionKey, StringComparison.Ordinal))
+        {
+            _window.SetPositionKey(positionKey);
+            _placedMode = _window.HasSavedPosition ? mode : ViewMode.None;
+        }
+        else if (_window.HasSavedPosition)
+        {
+            _placedMode = mode;
+        }
+
         if (!_window.IsVisible)
         {
             Context.Log.Msg($"Client helper: showing window for {mode}.");
@@ -140,7 +152,7 @@ internal sealed class ClientHelperModule : PtrModule
         }
 
         var target = FindWindowRect(mode);
-        if (target != null && mode != _placedMode)
+        if (target != null && mode != _placedMode && !_window.HasSavedPosition)
         {
             Context.Log.Msg("Client helper: placing window.");
             _window.PlaceNextTo(target, 32f, mode == ViewMode.Server);
@@ -238,6 +250,8 @@ internal sealed class ClientHelperModule : PtrModule
         var canvas = root.GetComponent<Canvas>();
         return canvas == null || canvas.enabled;
     }
+
+    private static string PositionKey(ViewMode mode) => $"ClientHelper.{mode}";
 
     private RectTransform? FindWindowRect(ViewMode mode)
     {
