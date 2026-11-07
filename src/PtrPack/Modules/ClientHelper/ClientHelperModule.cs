@@ -72,6 +72,7 @@ internal sealed class ClientHelperModule : PtrModule
         _referencesLogged = false;
         _renderedMode = ViewMode.None;
         _renderedSignature = string.Empty;
+        RouterAudit.Reset();
     }
 
     public override void OnUpdate()
@@ -286,7 +287,7 @@ internal sealed class ClientHelperModule : PtrModule
         try
         {
             var activeServer = _setIp?.server;
-            clients = ClientHelperData.Snapshot(activeServer);
+            clients = ClientHelperData.Snapshot(activeServer, null, true);
             Context.Log.Msg(
                 $"Client helper: server={activeServer?.ServerID ?? "null"} " +
                 $"type={activeServer?.serverType ?? -1} app={activeServer?.appID ?? -2} " +
@@ -308,25 +309,36 @@ internal sealed class ClientHelperModule : PtrModule
             return;
         }
 
-        if (clients.Count == 0)
+        bool anyRow = false;
+        foreach (var client in clients)
         {
-            _window!.AddLabel("No reachable customers have a free IP.", 15f);
-        }
-        else
-        {
-            foreach (var client in clients)
+            if (client.HasFreeIp)
             {
-                if (!client.HasFreeIp)
-                    continue;
-
-                var row = _window!.AddRow(
+                _window!.AddRow(
                     client.Title,
                     BuildDetail(client),
                     "Use",
                     () => FillServer(client));
-                row.SetActionEnabled(true);
+                anyRow = true;
+            }
+
+            foreach (var option in client.RoutedOptions)
+            {
+                if (!option.HasFreeIp)
+                    continue;
+
+                string ip = option.LowestFreeIp;
+                _window!.AddRow(
+                    $"{client.Title}  [routed]",
+                    option.Detail,
+                    "Use",
+                    () => FillServerIp(ip));
+                anyRow = true;
             }
         }
+
+        if (!anyRow)
+            _window!.AddLabel("No reachable customers have a free IP.", 15f);
 
         Context.Log.Msg($"Client helper: populated server view with {clients.Count} app(s).");
     }
@@ -522,6 +534,15 @@ internal sealed class ClientHelperModule : PtrModule
                 .Append(':').Append(client.LowestFreeIp)
                 .Append(':').Append(client.UsedIps)
                 .Append(':').Append(client.TotalIps);
+            foreach (var option in client.RoutedOptions)
+            {
+                text.Append('~').Append(option.RouterId)
+                    .Append(':').Append(option.Subnet)
+                    .Append(':').Append(option.Vlan)
+                    .Append(':').Append(option.LowestFreeIp)
+                    .Append(':').Append(option.UsedIps)
+                    .Append(':').Append(option.TotalIps);
+            }
         }
         return text.ToString();
     }
@@ -537,16 +558,21 @@ internal sealed class ClientHelperModule : PtrModule
 
     private void FillServer(ClientApp client)
     {
-        if (_setIp == null || !client.HasFreeIp)
+        FillServerIp(client.LowestFreeIp);
+    }
+
+    private void FillServerIp(string ip)
+    {
+        if (_setIp == null || string.IsNullOrEmpty(ip))
         {
             Context.Log.Warning("Client helper: Fill skipped; no SetIP or no free IP.");
             return;
         }
 
-        _setIp.ipAddress = client.LowestFreeIp;
+        _setIp.ipAddress = ip;
         if (_setIp.ipTextField != null)
-            _setIp.ipTextField.text = client.LowestFreeIp;
-        Context.Log.Msg($"Client helper: filled server IP {client.LowestFreeIp}.");
+            _setIp.ipTextField.text = ip;
+        Context.Log.Msg($"Client helper: filled server IP {ip}.");
     }
 
     private void FillRouter(RouterAuditItem item)
@@ -556,31 +582,37 @@ internal sealed class ClientHelperModule : PtrModule
 
         if (item.Action == RouterAction.FillSubnet)
         {
-            FillRouterSubnet(item.Client);
+            FillRouterSubnet(item);
             return;
         }
 
         FillRouterRoute(item);
     }
 
-    private void FillRouterSubnet(ClientApp client)
+    private void FillRouterSubnet(RouterAuditItem item)
     {
-        if (_routerConfig == null || string.IsNullOrEmpty(client.Subnet))
+        if (_routerConfig == null || string.IsNullOrEmpty(item.Subnet))
             return;
 
-        string mask = MaskFromCidr(client.Subnet);
-        _routerConfig.subnet = client.Subnet;
+        string mask = MaskFromCidr(item.Subnet);
+        string subnetIp = item.Subnet;
+        int slash = subnetIp.IndexOf('/');
+        if (slash >= 0)
+            subnetIp = subnetIp.Substring(0, slash);
+
+        _routerConfig.subnet = subnetIp;
         _routerConfig.mask = mask;
-        _routerConfig.subnetVlan = client.Vlan;
+        _routerConfig.subnetVlan = item.SourceVlan;
 
         if (_routerConfig.textSubnet != null)
-            _routerConfig.textSubnet.text = client.Subnet;
+            _routerConfig.textSubnet.text = subnetIp;
         if (_routerConfig.textMask != null)
             _routerConfig.textMask.text = mask;
         if (_routerConfig.textSubnetVlan != null)
-            _routerConfig.textSubnetVlan.text = client.Vlan.ToString();
+            _routerConfig.textSubnetVlan.text = item.SourceVlan.ToString();
 
-        Context.Log.Msg($"Client helper: filled router subnet {client.Subnet}, VLAN {client.Vlan}.");
+        Context.Log.Msg(
+            $"Client helper: filled router subnet {item.Subnet}, VLAN {item.SourceVlan}.");
     }
 
     private void FillRouterRoute(RouterAuditItem item)

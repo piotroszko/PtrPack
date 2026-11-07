@@ -48,6 +48,8 @@ internal sealed class ClientApp
     internal int TotalIps { get; }
     internal int RequiredServerType { get; }
 
+    internal List<RoutedIpOption> RoutedOptions { get; } = new List<RoutedIpOption>();
+
     internal bool HasFreeIp => !string.IsNullOrEmpty(LowestFreeIp);
 
     internal string Title => $"{CustomerName}  •  App {AppId}";
@@ -57,7 +59,10 @@ internal static class ClientHelperData
 {
     internal static int LastEligibleCount { get; private set; } = -1;
 
-    internal static List<ClientApp> Snapshot(Server? server = null, string? targetDeviceId = null)
+    internal static List<ClientApp> Snapshot(
+        Server? server = null,
+        string? targetDeviceId = null,
+        bool includeRouted = false)
     {
         var result = new List<ClientApp>();
         var map = NetworkMap.instance;
@@ -153,7 +158,7 @@ internal static class ClientHelperData
                     setIp,
                     usedIps);
 
-                result.Add(new ClientApp(
+                var client = new ClientApp(
                     customerBase.customerBaseID,
                     customerBase.customerID,
                     customerName,
@@ -164,7 +169,8 @@ internal static class ClientHelperData
                     lowest,
                     used,
                     total,
-                    requiredType));
+                    requiredType);
+                result.Add(client);
             }
         }
 
@@ -173,6 +179,9 @@ internal static class ClientHelperData
             int name = string.Compare(left.CustomerName, right.CustomerName, StringComparison.OrdinalIgnoreCase);
             return name != 0 ? name : left.AppId.CompareTo(right.AppId);
         });
+
+        if (includeRouted)
+            RoutedSubnets.FillClients(result, usedIps, server);
 
         return result;
     }
