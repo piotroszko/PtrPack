@@ -81,7 +81,7 @@ internal static class SwitchAudit
         int portCount = cables == null ? networkSwitch.PortCount : cables.Length;
         int linked = 0;
         int blocked = 0;
-        var clients = ClientHelperData.Snapshot(null, networkSwitch.switchId);
+        var clients = ClientHelperData.SnapshotNetwork(networkSwitch.switchId);
 
         for (int i = 0; i < portCount; i++)
         {
@@ -121,7 +121,9 @@ internal static class SwitchAudit
 
             foreach (var client in clients)
             {
-                if (client.Vlan >= 0 && denied.Contains(client.Vlan))
+                if (client.Vlan >= 0 &&
+                    IsKnownVlan(networkSwitch, client.Vlan) &&
+                    denied.Contains(client.Vlan))
                 {
                     gaps.Add(new SwitchVlanGap(
                         i,
@@ -131,25 +133,13 @@ internal static class SwitchAudit
             }
         }
 
-        var knownVlans = networkSwitch.knownVlans;
-        if (knownVlans != null && knownVlans.Count > 0)
-        {
-            var seen = new HashSet<int>();
-            foreach (var client in clients)
-            {
-                if (client.Vlan >= 0 &&
-                    !knownVlans.Contains(client.Vlan) &&
-                    seen.Add(client.Vlan))
-                {
-                    gaps.Add(new SwitchVlanGap(
-                        -1,
-                        client,
-                        $"VLAN {client.Vlan} is not known on this switch"));
-                }
-            }
-        }
-
         return new SwitchAuditResult(ports, gaps, linked, blocked);
+    }
+
+    private static bool IsKnownVlan(NetworkSwitch networkSwitch, int vlan)
+    {
+        var known = networkSwitch.knownVlans;
+        return known == null || known.Count == 0 || known.Contains(vlan);
     }
 
     private static string Describe(CableLink? cable)

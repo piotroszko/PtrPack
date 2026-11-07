@@ -69,7 +69,7 @@ internal static class RouterAudit
         if (router == null)
             return result;
 
-        var clients = ClientHelperData.Snapshot(null, router.switchId);
+        var clients = ClientHelperData.SnapshotNetwork(router.switchId);
         var owned = new List<Router.OwnedSubnet>();
         if (router.ownedSubnets != null)
         {
@@ -186,7 +186,7 @@ internal static class RouterAudit
                     client,
                     RouterAction.FillRoute,
                     "Missing route",
-                    $"source VLAN {plan.Vlan}  {sourceIp}  ->  target VLAN {client.Vlan}  {client.Gateway}",
+                    $"VLAN {plan.Vlan}  ->  VLAN {client.Vlan}",
                     string.Empty,
                     plan.Vlan,
                     sourceIp));
@@ -245,9 +245,6 @@ internal static class RouterAudit
         Router.RouteEntry route,
         List<Router.OwnedSubnet> owned)
     {
-        if (string.IsNullOrEmpty(route.sourceIp))
-            return false;
-
         return FindOwnedByVlan(owned, route.sourceVlanId) != null;
     }
 

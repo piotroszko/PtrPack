@@ -73,6 +73,7 @@ internal sealed class ClientHelperModule : PtrModule
         _renderedMode = ViewMode.None;
         _renderedSignature = string.Empty;
         RouterAudit.Reset();
+        ClientHelperData.ResetCaches();
     }
 
     public override void OnUpdate()
@@ -290,8 +291,7 @@ internal sealed class ClientHelperModule : PtrModule
             clients = ClientHelperData.Snapshot(activeServer, null, true);
             Context.Log.Msg(
                 $"Client helper: server={activeServer?.ServerID ?? "null"} " +
-                $"type={activeServer?.serverType ?? -1} app={activeServer?.appID ?? -2} " +
-                $"eligibleCustomers={ClientHelperData.LastEligibleCount}.");
+                $"type={activeServer?.serverType ?? -1} app={activeServer?.appID ?? -2}.");
         }
         catch (Exception exception)
         {
@@ -625,27 +625,19 @@ internal sealed class ClientHelperModule : PtrModule
             return;
 
         ClientApp client = item.Client;
-        if (item.Action == RouterAction.FillRoute &&
-            item.SourceVlan >= 0 &&
-            !string.IsNullOrEmpty(item.SourceIp))
-        {
+        if (item.Action == RouterAction.FillRoute && item.SourceVlan >= 0)
             _routerConfig.routeSourceVlan = item.SourceVlan;
-            _routerConfig.routeSourceIp = item.SourceIp;
-            if (_routerConfig.textRouteSource != null)
-                _routerConfig.textRouteSource.text = item.SourceIp;
-        }
 
         _routerConfig.routeTargetVlan = client.Vlan;
-        if (!string.IsNullOrEmpty(client.Gateway))
-        {
-            _routerConfig.routeTargetIp = client.Gateway;
-            if (_routerConfig.textRouteTarget != null)
-                _routerConfig.textRouteTarget.text = client.Gateway;
-        }
+        _routerConfig.routeSourceIp = string.Empty;
+        _routerConfig.routeTargetIp = string.Empty;
+        if (_routerConfig.textRouteSource != null)
+            _routerConfig.textRouteSource.text = item.SourceVlan.ToString();
+        if (_routerConfig.textRouteTarget != null)
+            _routerConfig.textRouteTarget.text = client.Vlan.ToString();
 
         Context.Log.Msg(
-            $"Client helper: filled router route source VLAN {item.SourceVlan} {item.SourceIp}, " +
-            $"target VLAN {client.Vlan} {client.Gateway}.");
+            $"Client helper: filled router route VLAN {item.SourceVlan} -> VLAN {client.Vlan}.");
     }
 
     private static string MaskFromCidr(string subnet)
