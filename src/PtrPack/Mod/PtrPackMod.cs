@@ -44,6 +44,5 @@ public sealed class PtrPackMod : MelonMod
     private static PtrModule[] CreateModules() => new PtrModule[]
     {
         new EolControlModule(),
-        new ComputerAppModule(),
     };
 }

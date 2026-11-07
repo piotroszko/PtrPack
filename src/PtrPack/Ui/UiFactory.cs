@@ -99,4 +99,35 @@ internal static class UiFactory
         rect.sizeDelta = size;
         rect.anchoredPosition = offset;
     }
+
+    internal static void SetTopLeft(RectTransform rect, Vector2 size, Vector2 offset)
+    {
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 1f);
+        rect.sizeDelta = size;
+        rect.anchoredPosition = offset;
+    }
+
+    internal static bool SetButtonLabel(ButtonExtended button, string text)
+    {
+        bool any = false;
+
+        var localised = button.GetComponentsInChildren<LocalisedText>(true);
+        for (int i = 0; i < localised.Length; i++)
+        {
+            if (localised[i] == null) continue;
+            localised[i].enabled = false;
+            Object.Destroy(localised[i]);
+        }
+
+        var labels = button.GetComponentsInChildren<TextMeshProUGUI>(true);
+        for (int i = 0; i < labels.Length; i++)
+        {
+            if (labels[i] == null) continue;
+            any = true;
+            labels[i].text = text;
+        }
+        return any;
+    }
 }
