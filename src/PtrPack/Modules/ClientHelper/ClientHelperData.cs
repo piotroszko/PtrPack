@@ -4,6 +4,7 @@ using Il2Cpp;
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PtrLib.Ui;
+using UnityEngine;
 
 namespace PtrPack.Modules.ClientHelper;
 
@@ -48,7 +49,7 @@ internal sealed class ClientApp
 
 internal static class ClientHelperData
 {
-    internal static List<ClientApp> Snapshot()
+    internal static List<ClientApp> Snapshot(Server? server = null)
     {
         var result = new List<ClientApp>();
         var map = NetworkMap.instance;
@@ -56,6 +57,8 @@ internal static class ClientHelperData
             return result;
 
         var setIp = UiFactory.FindSceneComponent<SetIP>();
+        var usedIps = CollectUsedIps();
+        int serverType = server != null ? server.serverType : -1;
 
         var customerBases = new List<CustomerBase>();
         var customerBaseMap = map.customerBases;
@@ -73,6 +76,7 @@ internal static class ClientHelperData
             }
         }
 
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var customerBase in customerBases)
         {
             if (customerBase == null)
@@ -108,15 +112,24 @@ internal static class ClientHelperData
             foreach (int appId in appIds)
             {
                 string subnet = Get(customerBase.subnetsPerApp, appId, string.Empty);
+                if (string.IsNullOrEmpty(subnet))
+                    continue;
+
+                string key = $"{customerName}:{appId}:{subnet}";
+                if (!seen.Add(key))
+                    continue;
+
+                int requiredType = Get(customerBase.appIdToServerType, appId, -1);
+                if (serverType >= 0 && requiredType >= 0 && requiredType != serverType)
+                    continue;
+
                 int vlan = Get(customerBase.vlanIdsPerApp, appId, 0);
-                string gateway = string.IsNullOrEmpty(subnet)
-                    ? string.Empty
-                    : map.GetGatewayForSubnet(subnet) ?? string.Empty;
+                string gateway = map.GetGatewayForSubnet(subnet) ?? string.Empty;
 
                 Il2CppStringArray? usableIps = null;
                 customerBase.usableIpsPerApp?.TryGetValue(appId, out usableIps);
 
-                int used = CountUsed(customerBase, usableIps);
+                int used = CountUsed(customerBase, usableIps, usedIps);
                 int total = usableIps == null ? 0 : usableIps.Length;
 
                 string lowest = FindLowestFree(
@@ -124,7 +137,8 @@ internal static class ClientHelperData
                     subnet,
                     gateway,
                     customerBase,
-                    setIp);
+                    setIp,
+                    usedIps);
 
                 result.Add(new ClientApp(
                     customerBase.customerBaseID,
@@ -148,19 +162,34 @@ internal static class ClientHelperData
         return result;
     }
 
-    private static int CountUsed(CustomerBase customerBase, Il2CppStringArray? usableIps)
+    private static HashSet<string> CollectUsedIps()
     {
-        if (usableIps == null || customerBase.routedIpRefCount == null)
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var servers = UnityEngine.Object.FindObjectsOfType<Server>();
+        for (int i = 0; i < servers.Length; i++)
+        {
+            var server = servers[i];
+            if (server == null)
+                continue;
+
+            string ip = server.IP;
+            if (!string.IsNullOrWhiteSpace(ip) && ip != "0.0.0.0")
+                used.Add(ip);
+        }
+
+        return used;
+    }
+
+    private static int CountUsed(CustomerBase customerBase, Il2CppStringArray? usableIps, HashSet<string> usedIps)
+    {
+        if (usableIps == null)
             return 0;
 
         int used = 0;
         for (int i = 0; i < usableIps.Length; i++)
         {
             string ip = usableIps[i];
-            if (string.IsNullOrWhiteSpace(ip))
-                continue;
-
-            if (customerBase.routedIpRefCount.TryGetValue(ip, out int count) && count > 0)
+            if (!string.IsNullOrWhiteSpace(ip) && usedIps.Contains(ip))
                 used++;
         }
 
@@ -172,7 +201,8 @@ internal static class ClientHelperData
         string subnet,
         string gateway,
         CustomerBase customerBase,
-        SetIP? setIp)
+        SetIP? setIp,
+        HashSet<string> usedIps)
     {
         var candidates = new List<string>();
         if (usableIps != null)
@@ -205,13 +235,8 @@ internal static class ClientHelperData
         candidates.Sort(CompareIp);
         for (int i = 0; i < candidates.Count; i++)
         {
-            string ip = candidates[i];
-            if (customerBase.routedIpRefCount == null ||
-                !customerBase.routedIpRefCount.TryGetValue(ip, out int count) ||
-                count <= 0)
-            {
-                return ip;
-            }
+            if (!usedIps.Contains(candidates[i]))
+                return candidates[i];
         }
 
         return string.Empty;

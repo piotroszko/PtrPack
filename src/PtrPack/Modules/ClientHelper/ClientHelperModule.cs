@@ -26,9 +26,12 @@ internal sealed class ClientHelperModule : PtrModule
     private float _nextReferenceScan;
     private float _nextRefresh;
     private ViewMode _lastMode;
+    private ViewMode _placedMode;
     private bool _templateWarningLogged;
     private bool _windowLogged;
     private bool _referencesLogged;
+    private ViewMode _renderedMode;
+    private string _renderedSignature = string.Empty;
 
     public override string Id => "ClientHelper";
     public override string DisplayName => "Client Helper";
@@ -55,9 +58,12 @@ internal sealed class ClientHelperModule : PtrModule
         _nextReferenceScan = 0f;
         _nextRefresh = 0f;
         _lastMode = ViewMode.None;
+        _placedMode = ViewMode.None;
         _templateWarningLogged = false;
         _windowLogged = false;
         _referencesLogged = false;
+        _renderedMode = ViewMode.None;
+        _renderedSignature = string.Empty;
     }
 
     public override void OnUpdate()
@@ -77,6 +83,7 @@ internal sealed class ClientHelperModule : PtrModule
         if (mode == ViewMode.None)
         {
             _lastMode = ViewMode.None;
+            _placedMode = ViewMode.None;
             _window?.Hide();
             return;
         }
@@ -122,10 +129,11 @@ internal sealed class ClientHelperModule : PtrModule
         }
 
         var target = FindWindowRect(mode);
-        if (target != null)
+        if (target != null && mode != _placedMode)
         {
             Context.Log.Msg("Client helper: placing window.");
             _window.PlaceNextTo(target, 32f, mode == ViewMode.Server);
+            _placedMode = mode;
             Context.Log.Msg(
                 $"Client helper: window at {_window.WindowRect.anchoredPosition} " +
                 $"(target {target.rect.size} at {target.anchoredPosition}).");
@@ -134,7 +142,7 @@ internal sealed class ClientHelperModule : PtrModule
         if (mode != _lastMode || now >= _nextRefresh)
         {
             _lastMode = mode;
-            _nextRefresh = now + 1f;
+            _nextRefresh = now + 2f;
             Populate(mode);
         }
     }
@@ -211,6 +219,21 @@ internal sealed class ClientHelperModule : PtrModule
         if (_window == null)
             return;
 
+        List<ClientApp> clients;
+        try
+        {
+            clients = ClientHelperData.Snapshot(mode == ViewMode.Server ? _setIp?.server : null);
+        }
+        catch (Exception exception)
+        {
+            Context.Log.Warning($"Client data unavailable: {exception.Message}");
+            clients = new List<ClientApp>();
+        }
+
+        string signature = BuildSignature(mode, clients);
+        if (mode == _renderedMode && signature == _renderedSignature)
+            return;
+
         Context.Log.Msg("Client helper: populating.");
         _window.Clear();
         _window.SetTitle(mode == ViewMode.Server
@@ -221,40 +244,56 @@ internal sealed class ClientHelperModule : PtrModule
             mode == ViewMode.Server
                 ? "Use fills the server IP field with the lowest free address."
                 : "Use fills the subnet, mask and VLAN fields.",
-            14f);
+            15f);
         Context.Log.Msg("Client helper: header added.");
 
-        List<ClientApp> clients;
-        try
-        {
-            clients = ClientHelperData.Snapshot();
-        }
-        catch (Exception exception)
-        {
-            Context.Log.Warning($"Client data unavailable: {exception.Message}");
-            clients = new List<ClientApp>();
-        }
         Context.Log.Msg($"Client helper: snapshot has {clients.Count} app(s).");
         if (clients.Count == 0)
         {
             _window.AddLabel("No signed customers yet.", 15f);
-            return;
+        }
+        else
+        {
+            foreach (var client in clients)
+            {
+                Context.Log.Msg($"Client helper: adding row for {client.Title}.");
+                var row = _window.AddRow(
+                    client.Title,
+                    BuildDetail(client),
+                    "Use",
+                    () =>
+                    {
+                        Context.Log.Msg($"Client helper: Use clicked for {client.Title}.");
+                        Fill(client, mode);
+                    });
+
+                if (!client.HasFreeIp)
+                    row.SetActionEnabled(false);
+                Context.Log.Msg($"Client helper: row added for {client.Title}.");
+            }
         }
 
+        _renderedMode = mode;
+        _renderedSignature = signature;
+        Context.Log.Msg("Client helper: populated.");
+    }
+
+    private static string BuildSignature(ViewMode mode, List<ClientApp> clients)
+    {
+        var text = new System.Text.StringBuilder();
+        text.Append((int)mode);
         foreach (var client in clients)
         {
-            Context.Log.Msg($"Client helper: adding row for {client.Title}.");
-            var row = _window.AddRow(
-                client.Title,
-                BuildDetail(client),
-                "Use",
-                () => Fill(client, mode));
-
-            if (!client.HasFreeIp)
-                row.SetActionEnabled(false);
-            Context.Log.Msg($"Client helper: row added for {client.Title}.");
+            text.Append('|').Append(client.CustomerBaseId)
+                .Append(':').Append(client.AppId)
+                .Append(':').Append(client.Subnet)
+                .Append(':').Append(client.Vlan)
+                .Append(':').Append(client.Gateway)
+                .Append(':').Append(client.LowestFreeIp)
+                .Append(':').Append(client.UsedIps)
+                .Append(':').Append(client.TotalIps);
         }
-        Context.Log.Msg("Client helper: populated.");
+        return text.ToString();
     }
 
     private static string BuildDetail(ClientApp client)
@@ -268,14 +307,19 @@ internal sealed class ClientHelperModule : PtrModule
 
     private void Fill(ClientApp client, ViewMode mode)
     {
+        Context.Log.Msg($"Client helper: Fill start for {client.Title}, free={client.LowestFreeIp}, setIp={_setIp != null}.");
         if (mode == ViewMode.Server)
         {
             if (_setIp == null || !client.HasFreeIp)
+            {
+                Context.Log.Warning("Client helper: Fill skipped; no SetIP or no free IP.");
                 return;
+            }
 
             _setIp.ipAddress = client.LowestFreeIp;
             if (_setIp.ipTextField != null)
                 _setIp.ipTextField.text = client.LowestFreeIp;
+            Context.Log.Msg($"Client helper: filled server IP {client.LowestFreeIp}.");
 
             return;
         }
