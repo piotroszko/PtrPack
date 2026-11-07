@@ -25,6 +25,10 @@
       <HintPath>$(GameDir)\MelonLoader\net6\Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Il2CppSystem.Core">
+      <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\Il2CppSystem.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>

@@ -15,13 +15,16 @@ internal sealed class ClientHelperModule : PtrModule
         None,
         Server,
         Router,
+        Switch,
     }
 
     private NativeWindow? _window;
     private SetIP? _setIp;
     private RouterConfiguration? _routerConfig;
+    private NetworkSwitchConfiguration? _switchConfig;
     private ToggleSetting? _showOnServer;
     private ToggleSetting? _showOnRouter;
+    private ToggleSetting? _showOnSwitch;
 
     private float _nextReferenceScan;
     private float _nextRefresh;
@@ -46,7 +49,11 @@ internal sealed class ClientHelperModule : PtrModule
             true);
         _showOnRouter = section.AddToggle(
             "ShowOnRouterView",
-            "Show helper on the router configuration screen",
+            "Show route planner on the router screen",
+            true);
+        _showOnSwitch = section.AddToggle(
+            "ShowOnSwitchView",
+            "Show port audit on the switch screen",
             true);
     }
 
@@ -55,6 +62,7 @@ internal sealed class ClientHelperModule : PtrModule
         _window = null;
         _setIp = null;
         _routerConfig = null;
+        _switchConfig = null;
         _nextReferenceScan = 0f;
         _nextRefresh = 0f;
         _lastMode = ViewMode.None;
@@ -95,7 +103,7 @@ internal sealed class ClientHelperModule : PtrModule
                 _window = Context.Windows.ShowNative(
                     "PtrPack Client Helper",
                     "Client Helper",
-                    new Vector2(560f, 560f),
+                    new Vector2(660f, 620f),
                     Vector2.zero,
                     25,
                     false);
@@ -157,11 +165,16 @@ internal sealed class ClientHelperModule : PtrModule
             _setIp = FindSetIp();
         if (_routerConfig == null)
             _routerConfig = UiFactory.FindSceneComponent<RouterConfiguration>();
+        if (_switchConfig == null)
+            _switchConfig = UiFactory.FindSceneComponent<NetworkSwitchConfiguration>();
 
-        if (!_referencesLogged && (_setIp != null || _routerConfig != null))
+        if (!_referencesLogged &&
+            (_setIp != null || _routerConfig != null || _switchConfig != null))
         {
             _referencesLogged = true;
-            Context.Log.Msg($"Client helper references: SetIP={_setIp != null}, Router={_routerConfig != null}.");
+            Context.Log.Msg(
+                $"Client helper references: SetIP={_setIp != null}, " +
+                $"Router={_routerConfig != null}, Switch={_switchConfig != null}.");
         }
     }
 
@@ -205,6 +218,13 @@ internal sealed class ClientHelperModule : PtrModule
             return ViewMode.Router;
         }
 
+        if (_showOnSwitch?.Value != false &&
+            _switchConfig != null &&
+            IsVisible(_switchConfig.gameObject))
+        {
+            return ViewMode.Switch;
+        }
+
         return ViewMode.None;
     }
 
@@ -224,6 +244,8 @@ internal sealed class ClientHelperModule : PtrModule
             root = _setIp.canvas.transform;
         else if (mode == ViewMode.Router)
             root = _routerConfig?.transform;
+        else if (mode == ViewMode.Switch)
+            root = _switchConfig?.transform;
 
         if (root == null)
             return null;
@@ -244,10 +266,26 @@ internal sealed class ClientHelperModule : PtrModule
         if (_window == null)
             return;
 
+        switch (mode)
+        {
+            case ViewMode.Server:
+                PopulateServer();
+                break;
+            case ViewMode.Router:
+                PopulateRouter();
+                break;
+            case ViewMode.Switch:
+                PopulateSwitch();
+                break;
+        }
+    }
+
+    private void PopulateServer()
+    {
         List<ClientApp> clients;
         try
         {
-            var activeServer = mode == ViewMode.Server ? _setIp?.server : null;
+            var activeServer = _setIp?.server;
             clients = ClientHelperData.Snapshot(activeServer);
             Context.Log.Msg(
                 $"Client helper: server={activeServer?.ServerID ?? "null"} " +
@@ -260,27 +298,19 @@ internal sealed class ClientHelperModule : PtrModule
             clients = new List<ClientApp>();
         }
 
-        string signature = BuildSignature(mode, clients);
-        if (mode == _renderedMode && signature == _renderedSignature)
+        string signature = BuildSignature(ViewMode.Server, clients);
+        if (!BeginRender(
+                ViewMode.Server,
+                "Client IP Helper",
+                "Use fills the server IP field with the lowest free address.",
+                signature))
+        {
             return;
+        }
 
-        Context.Log.Msg("Client helper: populating.");
-        _window.Clear();
-        _window.SetTitle(mode == ViewMode.Server
-            ? "Client IP Helper"
-            : "Client Subnet Helper");
-
-        _window.AddLabel(
-            mode == ViewMode.Server
-                ? "Use fills the server IP field with the lowest free address."
-                : "Use fills the subnet, mask and VLAN fields.",
-            15f);
-        Context.Log.Msg("Client helper: header added.");
-
-        Context.Log.Msg($"Client helper: snapshot has {clients.Count} app(s).");
         if (clients.Count == 0)
         {
-            _window.AddLabel("No signed customers yet.", 15f);
+            _window!.AddLabel("No reachable customers have a free IP.", 15f);
         }
         else
         {
@@ -289,27 +319,193 @@ internal sealed class ClientHelperModule : PtrModule
                 if (!client.HasFreeIp)
                     continue;
 
-                Context.Log.Msg(
-                    $"Client helper: adding row for {client.Title}, requiredType={client.RequiredServerType}.");
-                var row = _window.AddRow(
+                var row = _window!.AddRow(
                     client.Title,
                     BuildDetail(client),
                     "Use",
-                    () =>
-                    {
-                        Context.Log.Msg($"Client helper: Use clicked for {client.Title}.");
-                        Fill(client, mode);
-                    });
-
-                if (!client.HasFreeIp)
-                    row.SetActionEnabled(false);
-                Context.Log.Msg($"Client helper: row added for {client.Title}.");
+                    () => FillServer(client));
+                row.SetActionEnabled(true);
             }
         }
 
+        Context.Log.Msg($"Client helper: populated server view with {clients.Count} app(s).");
+    }
+
+    private void PopulateRouter()
+    {
+        if (_routerConfig == null)
+            return;
+
+        List<RouterAuditItem> items;
+        try
+        {
+            items = RouterAudit.Build(_routerConfig);
+        }
+        catch (Exception exception)
+        {
+            Context.Log.Warning($"Router audit unavailable: {exception.Message}");
+            items = new List<RouterAuditItem>();
+        }
+
+        var signature = new System.Text.StringBuilder("R");
+        foreach (var item in items)
+        {
+            signature.Append('|').Append(item.Client.CustomerBaseId)
+                .Append(':').Append(item.Client.AppId)
+                .Append(':').Append(item.Client.Vlan)
+                .Append(':').Append(item.Client.Subnet)
+                .Append(':').Append(item.Status)
+                .Append(':').Append(item.SourceVlan)
+                .Append(':').Append(item.SourceIp);
+        }
+
+        if (!BeginRender(
+                ViewMode.Router,
+                "Router Route Planner",
+                "Shows missing or invalid router config; Use fills the native form.",
+                signature.ToString()))
+        {
+            return;
+        }
+
+        if (items.Count == 0)
+        {
+            _window!.AddLabel("No router config issues detected.", 15f);
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                string action = item.Action switch
+                {
+                    RouterAction.FillSubnet => "Subnet",
+                    RouterAction.FillRouteTarget => "Target",
+                    _ => "Route",
+                };
+                _window!.AddRow(
+                    $"{item.Status}  —  {item.Client.Title}",
+                    item.Detail,
+                    action,
+                    () => FillRouter(item));
+            }
+        }
+
+        Context.Log.Msg($"Client helper: populated router view with {items.Count} issue(s).");
+    }
+
+    private void PopulateSwitch()
+    {
+        if (_switchConfig == null)
+            return;
+
+        SwitchAuditResult audit;
+        try
+        {
+            audit = SwitchAudit.Build(_switchConfig);
+        }
+        catch (Exception exception)
+        {
+            Context.Log.Warning($"Switch audit unavailable: {exception.Message}");
+            audit = new SwitchAuditResult(
+                new List<SwitchPortAudit>(),
+                new List<SwitchVlanGap>(),
+                0,
+                0);
+        }
+
+        var signature = new System.Text.StringBuilder("S")
+            .Append(audit.LinkedPorts).Append(':').Append(audit.BlockedPorts);
+        foreach (var port in audit.Ports)
+        {
+            signature.Append('|').Append(port.Index)
+                .Append(':').Append(port.Remote)
+                .Append(':').Append(port.ServerVlan)
+                .Append(':').Append(port.VlanBlocked)
+                .Append(':').Append(port.DeniedVlans);
+        }
+        foreach (var gap in audit.Gaps)
+        {
+            signature.Append('|').Append(gap.PortIndex)
+                .Append(':').Append(gap.Client.Vlan)
+                .Append(':').Append(gap.Client.Title);
+        }
+
+        if (!BeginRender(
+                ViewMode.Switch,
+                "Switch Port Audit",
+                "Linked ports, server VLANs, denied VLANs, and customer VLAN gaps.",
+                signature.ToString()))
+        {
+            return;
+        }
+
+        _window!.AddLabel(
+            $"Linked ports: {audit.LinkedPorts}   blocked server VLANs: {audit.BlockedPorts}",
+            15f);
+
+        _window.AddLabel("PORTS", 15f);
+        if (audit.Ports.Count == 0)
+        {
+            _window.AddLabel("No linked ports.", 14f);
+        }
+        else
+        {
+            foreach (var port in audit.Ports)
+            {
+                string vlan = port.ServerVlan >= 0 ? $"VLAN {port.ServerVlan}" : "no server VLAN";
+                string denied = string.IsNullOrEmpty(port.DeniedVlans)
+                    ? "-"
+                    : port.DeniedVlans;
+                string status = port.VlanBlocked ? "BLOCKED" : "ok";
+                _window.AddRow(
+                    $"Port {port.Index + 1}  {port.Remote}",
+                    $"{vlan}  denied: {denied}  [{status}]",
+                    "Select",
+                    () => _switchConfig.ClickPort(port.Index));
+            }
+        }
+
+        _window.AddLabel("CUSTOMER VLAN GAPS", 15f);
+        if (audit.Gaps.Count == 0)
+        {
+            _window.AddLabel("No customer VLANs are denied on linked ports.", 14f);
+        }
+        else
+        {
+            foreach (var gap in audit.Gaps)
+            {
+                int gapPort = gap.PortIndex;
+                _window.AddRow(
+                    $"{gap.Client.Title}  —  VLAN {gap.Client.Vlan}",
+                    gap.Detail,
+                    gapPort >= 0 ? "Select" : string.Empty,
+                    gapPort >= 0 ? () => _switchConfig.ClickPort(gapPort) : null);
+            }
+        }
+
+        Context.Log.Msg(
+            $"Client helper: populated switch view with {audit.Ports.Count} port(s), " +
+            $"{audit.Gaps.Count} gap(s).");
+    }
+
+    private bool BeginRender(
+        ViewMode mode,
+        string title,
+        string subtitle,
+        string signature)
+    {
+        if (_window == null)
+            return false;
+        if (mode == _renderedMode && signature == _renderedSignature)
+            return false;
+
+        Context.Log.Msg($"Client helper: populating {mode}.");
+        _window.Clear();
+        _window.SetTitle(title);
+        _window.AddLabel(subtitle, 15f);
         _renderedMode = mode;
         _renderedSignature = signature;
-        Context.Log.Msg("Client helper: populated.");
+        return true;
     }
 
     private static string BuildSignature(ViewMode mode, List<ClientApp> clients)
@@ -339,25 +535,36 @@ internal sealed class ClientHelperModule : PtrModule
         return $"VLAN {client.Vlan}  {subnet}\nGW {gateway}  low {free}  ({client.UsedIps}/{client.TotalIps})";
     }
 
-    private void Fill(ClientApp client, ViewMode mode)
+    private void FillServer(ClientApp client)
     {
-        Context.Log.Msg($"Client helper: Fill start for {client.Title}, free={client.LowestFreeIp}, setIp={_setIp != null}.");
-        if (mode == ViewMode.Server)
+        if (_setIp == null || !client.HasFreeIp)
         {
-            if (_setIp == null || !client.HasFreeIp)
-            {
-                Context.Log.Warning("Client helper: Fill skipped; no SetIP or no free IP.");
-                return;
-            }
-
-            _setIp.ipAddress = client.LowestFreeIp;
-            if (_setIp.ipTextField != null)
-                _setIp.ipTextField.text = client.LowestFreeIp;
-            Context.Log.Msg($"Client helper: filled server IP {client.LowestFreeIp}.");
-
+            Context.Log.Warning("Client helper: Fill skipped; no SetIP or no free IP.");
             return;
         }
 
+        _setIp.ipAddress = client.LowestFreeIp;
+        if (_setIp.ipTextField != null)
+            _setIp.ipTextField.text = client.LowestFreeIp;
+        Context.Log.Msg($"Client helper: filled server IP {client.LowestFreeIp}.");
+    }
+
+    private void FillRouter(RouterAuditItem item)
+    {
+        if (_routerConfig == null)
+            return;
+
+        if (item.Action == RouterAction.FillSubnet)
+        {
+            FillRouterSubnet(item.Client);
+            return;
+        }
+
+        FillRouterRoute(item);
+    }
+
+    private void FillRouterSubnet(ClientApp client)
+    {
         if (_routerConfig == null || string.IsNullOrEmpty(client.Subnet))
             return;
 
@@ -372,6 +579,37 @@ internal sealed class ClientHelperModule : PtrModule
             _routerConfig.textMask.text = mask;
         if (_routerConfig.textSubnetVlan != null)
             _routerConfig.textSubnetVlan.text = client.Vlan.ToString();
+
+        Context.Log.Msg($"Client helper: filled router subnet {client.Subnet}, VLAN {client.Vlan}.");
+    }
+
+    private void FillRouterRoute(RouterAuditItem item)
+    {
+        if (_routerConfig == null)
+            return;
+
+        ClientApp client = item.Client;
+        if (item.Action == RouterAction.FillRoute &&
+            item.SourceVlan >= 0 &&
+            !string.IsNullOrEmpty(item.SourceIp))
+        {
+            _routerConfig.routeSourceVlan = item.SourceVlan;
+            _routerConfig.routeSourceIp = item.SourceIp;
+            if (_routerConfig.textRouteSource != null)
+                _routerConfig.textRouteSource.text = item.SourceIp;
+        }
+
+        _routerConfig.routeTargetVlan = client.Vlan;
+        if (!string.IsNullOrEmpty(client.Gateway))
+        {
+            _routerConfig.routeTargetIp = client.Gateway;
+            if (_routerConfig.textRouteTarget != null)
+                _routerConfig.textRouteTarget.text = client.Gateway;
+        }
+
+        Context.Log.Msg(
+            $"Client helper: filled router route source VLAN {item.SourceVlan} {item.SourceIp}, " +
+            $"target VLAN {client.Vlan} {client.Gateway}.");
     }
 
     private static string MaskFromCidr(string subnet)

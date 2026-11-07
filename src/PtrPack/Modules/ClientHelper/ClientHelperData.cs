@@ -57,7 +57,7 @@ internal static class ClientHelperData
 {
     internal static int LastEligibleCount { get; private set; } = -1;
 
-    internal static List<ClientApp> Snapshot(Server? server = null)
+    internal static List<ClientApp> Snapshot(Server? server = null, string? targetDeviceId = null)
     {
         var result = new List<ClientApp>();
         var map = NetworkMap.instance;
@@ -114,8 +114,8 @@ internal static class ClientHelperData
                     appIds.Add(item.appTypes[i]);
             }
 
-            bool reachable = IsCustomerReachable(map, server, customerBase.customerID);
-            if (server != null && !reachable)
+            bool reachable = IsCustomerReachable(map, server, targetDeviceId, customerBase.customerID);
+            if (!reachable)
             {
                 MelonLoader.MelonLogger.Msg(
                     $"Client helper: skipping unreachable customer {customerName} (#{customerBase.customerID}).");
@@ -180,17 +180,21 @@ internal static class ClientHelperData
     private static bool IsCustomerReachable(
         NetworkMap map,
         Server? server,
+        string? targetDeviceId,
         int customerId)
     {
-        if (server == null)
-            return true;
+        string? target = server?.ServerID;
+        if (string.IsNullOrEmpty(target))
+            target = targetDeviceId;
 
+        if (string.IsNullOrEmpty(target))
+            return true;
         try
         {
-            var paths = map.FindAllShortestPathsFromCustomer(customerId, server.ServerID);
+            var paths = map.FindAllShortestPathsFromCustomer(customerId, target);
             int count = paths == null ? 0 : paths.Count;
             MelonLoader.MelonLogger.Msg(
-                $"Client helper: customer #{customerId} paths to {server.ServerID} = {count}.");
+                $"Client helper: customer #{customerId} paths to {target} = {count}.");
             if (count > 0)
                 return true;
         }
@@ -203,8 +207,10 @@ internal static class ClientHelperData
         try
         {
             var devices = map.devices;
-            if (devices != null)
-            {
+            if (devices == null)
+                return true;
+
+                bool sawCustomerDevice = false;
                 var keys = new Il2CppStringArray(devices.Count);
                 devices.Keys.CopyTo(keys, 0);
                 for (int i = 0; i < keys.Length; i++)
@@ -213,14 +219,17 @@ internal static class ClientHelperData
                     if (device == null || device.CustomerID != customerId)
                         continue;
 
-                    if (map.IsPhysicallyReachable(server.ServerID, device.Name))
+                    sawCustomerDevice = true;
+                    if (map.IsPhysicallyReachable(target, device.Name))
                     {
                         MelonLoader.MelonLogger.Msg(
                             $"Client helper: customer #{customerId} physically reachable via {device.Name}.");
                         return true;
                     }
                 }
-            }
+
+                if (!sawCustomerDevice)
+                    return true;
         }
         catch (Exception exception)
         {
